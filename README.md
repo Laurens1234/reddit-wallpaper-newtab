@@ -1,56 +1,81 @@
-# EarthPorn Wallpaper New Tab Extension
+# Reddit Wallpaper New Tab
 
-A Brave/Chrome browser extension that displays beautiful nature wallpapers from [r/EarthPorn](https://www.reddit.com/r/EarthPorn/) as your new tab background.
+A browser extension for Chrome and Brave that replaces your new tab page with stunning wallpapers from Reddit.
+
+![Preview](https://i.imgur.com/placeholder.png)
 
 ## Features
 
-- 🖼️ **Beautiful Wallpapers**: Automatically fetches high-quality nature photos from r/EarthPorn
-- 🔗 **Browser Shortcuts**: Keeps your most visited sites as shortcuts (just like the default new tab)
-- ⏰ **Clock & Date**: Clean time and date display
-- 🔍 **Search Bar**: Quick search using Brave Search
-- 🔄 **Refresh Button**: Get a new wallpaper with one click
-- 📷 **Photo Credits**: Shows the title and author of each photo (click to view on Reddit)
-- 💾 **Smart Caching**: Caches wallpapers to reduce API calls and load times
+### Wallpapers
+- 🖼️ Fetches high-quality images from Reddit (r/EarthPorn by default)
+- 🔄 Multiple subreddit support - combine your favorites
+- ⚙️ Filter by resolution, sort method, and time period
+- 🎬 Slideshow mode with configurable intervals
+- ❤️ Save favorites for quick access
+- 🚫 Blacklist images you don't want to see again
+
+### New Tab Experience
+- ⏰ Clean clock and date display
+- 🔍 Search bar (uses your default search engine)
+- 🔗 Quick access shortcuts to your most visited sites
+- ✏️ Fully customizable shortcuts - add, edit, or remove
+
+### Customization
+- 👁️ Hover-only mode for UI elements
+- 🌓 Auto-adjusting UI based on wallpaper brightness
+- 📥 Download wallpapers directly
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `R` | Load new wallpaper |
+| `D` | Download current wallpaper |
+| `F` | Add/remove from favorites |
+| `B` | Blacklist current wallpaper |
 
 ## Installation
 
-### For Brave Browser:
+1. Download or clone this repository
+2. Open your browser's extension page:
+   - **Brave**: `brave://extensions/`
+   - **Chrome**: `chrome://extensions/`
+3. Enable **Developer mode** (toggle in top right)
+4. Click **Load unpacked**
+5. Select the extension folder
+6. Open a new tab and enjoy!
 
-1. Open Brave and go to `brave://extensions/`
-2. Enable **Developer mode** (toggle in the top right)
-3. Click **Load unpacked**
-4. Select the `wallpaperGrabber` folder
-5. Open a new tab to see it in action!
+## Settings
 
-### For Chrome:
+Click the ⚙️ icon to customize:
 
-1. Open Chrome and go to `chrome://extensions/`
-2. Enable **Developer mode** (toggle in the top right)
-3. Click **Load unpacked**
-4. Select the `wallpaperGrabber` folder
-5. Open a new tab to see it in action!
+| Setting | Description |
+|---------|-------------|
+| Subreddit | One or more subreddits (comma-separated) |
+| Sort | Hot, New, or Top |
+| Time | For "Top" - hour, day, week, month, year, all |
+| Min Resolution | Filter out low-res images |
+| NSFW | Enable/disable NSFW content |
+| Slideshow | Auto-refresh interval (off, 1-60 min) |
+| Hover-only | Hide UI elements until hovered |
 
-## Permissions Explained
+## Popular Subreddits
 
-- **storage**: Used to cache wallpapers and your preferences
-- **topSites**: Used to display your most visited sites as shortcuts
+- `EarthPorn` - Nature landscapes (default)
+- `SpacePorn` - Space and astronomy
+- `CityPorn` - Urban photography
+- `WaterPorn` - Oceans, lakes, waterfalls
+- `SkyPorn` - Sky and cloud photography
+- `Wallpapers` - General wallpapers
 
-## Troubleshooting
+Combine multiple: `EarthPorn, SpacePorn, CityPorn`
 
-**Wallpapers not loading?**
-- Make sure you have an active internet connection
-- Reddit's API might be temporarily unavailable
-- Click the refresh button to try again
+## Permissions
 
-**Shortcuts not showing?**
-- The extension uses your browsing history
-- If you're a new user or cleared history, default shortcuts will be shown
-
-## Credits
-
-- Wallpapers sourced from [r/EarthPorn](https://www.reddit.com/r/EarthPorn/)
-- All photos belong to their respective photographers
+- **storage** - Save settings, favorites, and cache
+- **topSites** - Display your most visited sites
+- **search** - Use your default search engine
 
 ## License
 
-MIT License - Feel free to modify and share!
+MIT
