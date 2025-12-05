@@ -10,14 +10,14 @@ const DEFAULT_SETTINGS = {
   allowGifs: true,
   allowVideos: true,
   favoritesOnly: false,
+  zenMode: false,
   // Clock settings
-  clockFormat: '24',
-  showSeconds: false,
+  clockFormat: '24h',
   dateFormat: 'full',
   // Weather settings
   showWeather: false,
   weatherLocation: '',
-  weatherUnit: 'celsius',
+  weatherUnits: 'celsius',
   // Scheduled subreddits
   useSchedule: false,
   schedule: {
@@ -52,6 +52,96 @@ let currentWallpaperData = null;
 let wallpaperHistory = [];
 let historyIndex = -1;
 
+// Only restore previous state if this is a "soft refresh" (R key or refresh button)
+// New tabs and Ctrl+R should show loading screen normally
+(function restorePreviousStateImmediately() {
+  try {
+    const isSoftRefresh = sessionStorage.getItem('soft_refresh') === 'true';
+    sessionStorage.removeItem('soft_refresh'); // Clear the flag
+    
+    if (!isSoftRefresh) {
+      // Normal new tab or hard refresh - just restore clock format for consistency
+      const clockFormat = localStorage.getItem('last_clock_format') || '24h';
+      const dateFormat = localStorage.getItem('last_date_format') || 'full';
+      updateClockImmediate(clockFormat, dateFormat);
+      return;
+    }
+    
+    // Soft refresh - restore everything instantly
+    const url = localStorage.getItem('last_wallpaper_url');
+    if (url) {
+      const bg = document.getElementById('background');
+      if (bg) bg.src = url;
+      const loading = document.getElementById('loading');
+      if (loading) loading.classList.add('hidden');
+    }
+    
+    // Restore clock
+    const clockFormat = localStorage.getItem('last_clock_format') || '24h';
+    const dateFormat = localStorage.getItem('last_date_format') || 'full';
+    updateClockImmediate(clockFormat, dateFormat);
+    
+    // Restore shortcuts
+    const cachedShortcuts = localStorage.getItem('last_shortcuts_html');
+    if (cachedShortcuts) {
+      const container = document.getElementById('shortcuts');
+      if (container) container.innerHTML = cachedShortcuts;
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+})();
+
+// Immediate clock update (synchronous, no async settings fetch)
+function updateClockImmediate(clockFormat, dateFormat) {
+  const now = new Date();
+  const format = clockFormat || '24h';
+  
+  const is12Hour = format.startsWith('12h');
+  const showSeconds = format.includes('seconds');
+  
+  let hours = now.getHours();
+  let ampm = '';
+  
+  if (is12Hour) {
+    ampm = hours >= 12 ? ' PM' : ' AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+  }
+  
+  const hoursStr = hours.toString().padStart(2, '0');
+  const minutes = now.getMinutes().toString().padStart(2, '0');
+  const seconds = now.getSeconds().toString().padStart(2, '0');
+  
+  let timeStr = `${hoursStr}:${minutes}`;
+  if (showSeconds) {
+    timeStr += `:${seconds}`;
+  }
+  timeStr += ampm;
+  
+  const clock = document.getElementById('clock');
+  if (clock) clock.textContent = timeStr;
+  
+  let dateStr;
+  switch (dateFormat) {
+    case 'short':
+      dateStr = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      break;
+    case 'numeric':
+      dateStr = now.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+      break;
+    case 'weekday':
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'long' });
+      break;
+    case 'full':
+    default:
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      break;
+  }
+  const date = document.getElementById('date');
+  if (date) date.textContent = dateStr;
+}
+
 // Initialize the new tab
 document.addEventListener('DOMContentLoaded', async () => {
   updateClock();
@@ -65,9 +155,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadWallpaperHistory();
   await loadWallpaper();
   
-  // Apply hover-only settings
+  // Apply hover-only settings (with zen mode override)
   const settings = await getWallpaperSettings();
-  applyHoverSettings(settings.hoverOnly || {});
+  applyHoverSettings(settings.hoverOnly || {}, settings.zenMode || false);
   
   // Initialize weather
   if (settings.showWeather && settings.weatherLocation) {
@@ -79,6 +169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('weather-widget')?.addEventListener('click', openWeatherWebsite);
 
   document.getElementById('refresh-btn').addEventListener('click', () => {
+    sessionStorage.setItem('soft_refresh', 'true');
     location.reload();
   });
   
@@ -110,6 +201,7 @@ function handleKeyboard(e) {
   
   switch(e.key.toLowerCase()) {
     case 'r':
+      sessionStorage.setItem('soft_refresh', 'true');
       location.reload();
       break;
     case 'd':
@@ -131,11 +223,19 @@ function handleKeyboard(e) {
 async function updateClock() {
   const settings = await getWallpaperSettings();
   const now = new Date();
+  const format = settings.clockFormat || '24h';
+  const dateFormat = settings.dateFormat || 'full';
   
-  // Format hours based on 12/24 hour setting
+  // Cache formats for instant restore on next load
+  localStorage.setItem('last_clock_format', format);
+  localStorage.setItem('last_date_format', dateFormat);
+  
+  // Determine if 12-hour format
+  const is12Hour = format.startsWith('12h');
+  const showSeconds = format.includes('seconds');
+  
   let hours = now.getHours();
   let ampm = '';
-  const is12Hour = settings.clockFormat === '12h';
   
   if (is12Hour) {
     ampm = hours >= 12 ? ' PM' : ' AM';
@@ -143,22 +243,12 @@ async function updateClock() {
     hours = hours ? hours : 12; // 0 should be 12
   }
   
-  // For "full" format, use 12-hour style without padding, no AM/PM
-  if (settings.clockFormat === 'full') {
-    hours = now.getHours() % 12;
-    hours = hours ? hours : 12;
-  }
-  
-  // For "full" format, don't pad the hours (e.g., "2:30:45" not "02:30:45")
-  const hoursStr = settings.clockFormat === 'full' 
-    ? hours.toString() 
-    : hours.toString().padStart(2, '0');
+  const hoursStr = hours.toString().padStart(2, '0');
   const minutes = now.getMinutes().toString().padStart(2, '0');
   const seconds = now.getSeconds().toString().padStart(2, '0');
   
   let timeStr = `${hoursStr}:${minutes}`;
-  // "full" format always shows seconds, otherwise check setting
-  if (settings.clockFormat === 'full' || settings.showSeconds) {
+  if (showSeconds) {
     timeStr += `:${seconds}`;
   }
   timeStr += ampm;
@@ -167,7 +257,7 @@ async function updateClock() {
   
   // Format date based on setting
   let dateStr;
-  switch (settings.dateFormat) {
+  switch (dateFormat) {
     case 'short':
       dateStr = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       break;
@@ -224,23 +314,17 @@ async function loadShortcuts() {
     
     // Combine: top sites first, then custom shortcuts at the end
     const combined = [];
-    const existingUrls = new Set();
     
     // Add filtered top sites first
     for (const site of filteredTopSites) {
-      const hostname = new URL(site.url).hostname;
-      if (!existingUrls.has(hostname)) {
-        combined.push(site);
-        existingUrls.add(hostname);
-      }
+      combined.push(site);
     }
     
-    // Add custom shortcuts at the end (skip duplicates)
+    // Add all custom shortcuts at the end (no duplicate filtering)
     for (const shortcut of customShortcuts) {
       const hostname = new URL(shortcut.url).hostname;
-      if (!existingUrls.has(hostname) && !removedShortcuts.includes(hostname)) {
+      if (!removedShortcuts.includes(hostname)) {
         combined.push(shortcut);
-        existingUrls.add(hostname);
       }
     }
     
@@ -254,6 +338,9 @@ async function loadShortcuts() {
     // Add the "Add Shortcut" button
     const addButton = createAddShortcutButton();
     shortcutsContainer.appendChild(addButton);
+    
+    // Cache shortcuts HTML for instant restore on next load
+    localStorage.setItem('last_shortcuts_html', shortcutsContainer.innerHTML);
   } catch (error) {
     console.error('Error loading shortcuts:', error);
   }
@@ -403,43 +490,13 @@ async function saveShortcut() {
   
   // If no name provided, generate one from the URL
   if (!name) {
-    const hostname = new URL(url).hostname;
-    // Remove www. and get the domain name, capitalize first letter
-    name = hostname.replace(/^www\./, '').split('.')[0];
-    name = name.charAt(0).toUpperCase() + name.slice(1);
+    name = generateShortcutName(url);
   }
   
-  // Get existing custom shortcuts and top sites
+  // Get existing custom shortcuts
   const stored = await chrome.storage.local.get(['custom_shortcuts', 'removed_shortcuts']);
   let customShortcuts = stored.custom_shortcuts || [];
   let removedShortcuts = stored.removed_shortcuts || [];
-  const topSites = await chrome.topSites.get();
-  
-  // Check for duplicates
-  const newHostname = new URL(url).hostname;
-  const currentHostname = currentEditSite ? new URL(currentEditSite.url).hostname : null;
-  
-  // When editing, allow the same URL if it's the one being edited
-  const isEditingSameUrl = currentHostname === newHostname;
-  
-  if (!isEditingSameUrl) {
-    // Check if URL already exists in top sites (excluding the one being edited)
-    const existsInTopSites = topSites.some(site => {
-      const siteHostname = new URL(site.url).hostname;
-      return siteHostname === newHostname && siteHostname !== currentHostname;
-    });
-    if (existsInTopSites) {
-      alert('This site already exists in your top sites!');
-      return;
-    }
-    
-    // Check if URL already exists in custom shortcuts
-    const existsInCustom = customShortcuts.some(s => new URL(s.url).hostname === newHostname);
-    if (existsInCustom) {
-      alert('This shortcut already exists!');
-      return;
-    }
-  }
   
   // Add or update the shortcut
   const newShortcut = { title: name, url: url, custom: true };
@@ -496,6 +553,76 @@ async function removeShortcut(site, index) {
   });
   
   await loadShortcuts();
+}
+
+// Generate a smart name from a URL
+function generateShortcutName(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.replace(/^www\./, '');
+    const pathname = urlObj.pathname;
+    const params = urlObj.searchParams;
+    
+    // YouTube - try to get video/playlist info
+    if (hostname.includes('youtube.com')) {
+      if (params.has('list')) {
+        return 'YouTube Playlist';
+      }
+      if (params.has('v') || pathname.includes('/watch')) {
+        return 'YouTube Video';
+      }
+      if (pathname.includes('/channel') || pathname.includes('/@')) {
+        return 'YouTube Channel';
+      }
+      return 'YouTube';
+    }
+    
+    // Reddit - get subreddit name
+    if (hostname.includes('reddit.com')) {
+      const match = pathname.match(/\/r\/([^\/]+)/);
+      if (match) {
+        return 'r/' + match[1];
+      }
+      return 'Reddit';
+    }
+    
+    // GitHub - get repo name
+    if (hostname.includes('github.com')) {
+      const parts = pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        return parts[1]; // repo name
+      }
+      if (parts.length === 1) {
+        return parts[0]; // user/org name
+      }
+      return 'GitHub';
+    }
+    
+    // Twitter/X - get profile or tweet
+    if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+      const parts = pathname.split('/').filter(Boolean);
+      if (parts.length >= 1 && parts[0] !== 'search') {
+        return '@' + parts[0];
+      }
+      return 'Twitter';
+    }
+    
+    // Google services
+    if (hostname.includes('google.com')) {
+      if (hostname.includes('docs.')) return 'Google Docs';
+      if (hostname.includes('drive.')) return 'Google Drive';
+      if (hostname.includes('mail.')) return 'Gmail';
+      if (hostname.includes('calendar.')) return 'Calendar';
+      if (pathname.includes('/maps')) return 'Google Maps';
+      return 'Google';
+    }
+    
+    // Default: capitalize the domain name
+    const domainName = hostname.split('.')[0];
+    return domainName.charAt(0).toUpperCase() + domainName.slice(1);
+  } catch {
+    return 'Shortcut';
+  }
 }
 
 // Setup modal event listeners
@@ -801,7 +928,6 @@ async function openSettingsModal() {
   
   // Load clock format settings
   document.getElementById('settings-clock-format').value = settings.clockFormat || '24h';
-  document.getElementById('settings-show-seconds').checked = settings.showSeconds || false;
   document.getElementById('settings-date-format').value = settings.dateFormat || 'full';
   
   // Load weather settings
@@ -816,6 +942,9 @@ async function openSettingsModal() {
   document.getElementById('settings-scheduled-enabled').checked = settings.scheduledEnabled || false;
   renderScheduledSubreddits(settings.scheduledSubreddits || []);
   
+  // Load Zen Mode setting
+  document.getElementById('settings-zen-mode').checked = settings.zenMode || false;
+  
   // Show/hide time period based on current sort
   document.getElementById('time-period-group').style.display = 
     settings.sort === 'top' ? 'block' : 'none';
@@ -828,38 +957,53 @@ function closeSettingsModal() {
 }
 
 // Apply hover-only visibility settings
-function applyHoverSettings(hoverOnly) {
+function applyHoverSettings(hoverOnly, zenMode = false) {
   const clockDateEl = document.getElementById('clock-date');
   const searchEl = document.getElementById('search-container');
   const shortcutsEl = document.getElementById('shortcuts-container');
   const wallpaperInfoEl = document.getElementById('wallpaper-info');
+  const weatherWidget = document.getElementById('weather-widget');
+  
+  // Zen Mode overrides all individual settings
+  if (zenMode) {
+    clockDateEl?.classList.add('hover-only');
+    searchEl?.classList.add('hover-only');
+    shortcutsEl?.classList.add('hover-only');
+    wallpaperInfoEl?.classList.add('hover-only');
+    weatherWidget?.classList.add('hover-only');
+    document.body.classList.add('zen-mode');
+    return;
+  }
+  
+  document.body.classList.remove('zen-mode');
+  weatherWidget?.classList.remove('hover-only');
   
   // Clock & Date (single container)
   if (hoverOnly.clock) {
-    clockDateEl.classList.add('hover-only');
+    clockDateEl?.classList.add('hover-only');
   } else {
-    clockDateEl.classList.remove('hover-only');
+    clockDateEl?.classList.remove('hover-only');
   }
   
   // Search
   if (hoverOnly.search) {
-    searchEl.classList.add('hover-only');
+    searchEl?.classList.add('hover-only');
   } else {
-    searchEl.classList.remove('hover-only');
+    searchEl?.classList.remove('hover-only');
   }
   
   // Shortcuts
   if (hoverOnly.shortcuts) {
-    shortcutsEl.classList.add('hover-only');
+    shortcutsEl?.classList.add('hover-only');
   } else {
-    shortcutsEl.classList.remove('hover-only');
+    shortcutsEl?.classList.remove('hover-only');
   }
   
   // Wallpaper Info (bottom bar) - this one shows on direct hover
   if (hoverOnly.wallpaperInfo) {
-    wallpaperInfoEl.classList.add('hover-only');
+    wallpaperInfoEl?.classList.add('hover-only');
   } else {
-    wallpaperInfoEl.classList.remove('hover-only');
+    wallpaperInfoEl?.classList.remove('hover-only');
   }
 }
 
@@ -904,7 +1048,6 @@ async function saveSettings() {
   
   // Clock format settings
   const clockFormat = document.getElementById('settings-clock-format').value;
-  const showSeconds = document.getElementById('settings-show-seconds').checked;
   const dateFormat = document.getElementById('settings-date-format').value;
   
   // Weather settings
@@ -919,19 +1062,23 @@ async function saveSettings() {
   const scheduledEnabled = document.getElementById('settings-scheduled-enabled').checked;
   const scheduledSubreddits = getScheduledSubredditsFromUI();
   
+  // Zen Mode
+  const zenMode = document.getElementById('settings-zen-mode').checked;
+  
   const settings = { 
     subreddit, sort, time, minResolution, allowNsfw, slideshowInterval, 
     allowImages, allowGifs, allowVideos, hoverOnly,
-    clockFormat, showSeconds, dateFormat,
+    clockFormat, dateFormat,
     showWeather, weatherLocation, weatherUnits,
     favoritesOnly,
-    scheduledEnabled, scheduledSubreddits
+    scheduledEnabled, scheduledSubreddits,
+    zenMode
   };
   
   await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
   
-  // Apply hover-only settings immediately
-  applyHoverSettings(hoverOnly);
+  // Apply hover-only settings immediately (with zen mode override)
+  applyHoverSettings(hoverOnly, zenMode);
   
   // Update weather widget visibility
   const weatherWidget = document.getElementById('weather-widget');
@@ -1501,6 +1648,9 @@ function setWallpaperFast(wallpaper) {
     backgroundVideo.src = videoUrl;
     backgroundVideo.play();
     
+    // Save this URL as the last wallpaper for next load (use localStorage for instant sync access)
+    localStorage.setItem('last_wallpaper_url', wallpaper.thumbnail || wallpaper.url);
+    
     currentWallpaperData = wallpaper;
     updateWallpaperInfo(wallpaper);
     updateFavoriteButton();
@@ -1518,6 +1668,9 @@ function setWallpaperFast(wallpaper) {
   testImg.onload = () => {
     // Image loaded successfully, apply it directly
     background.src = wallpaper.url;
+    
+    // Save this URL as the last wallpaper for next load (use localStorage for instant sync access)
+    localStorage.setItem('last_wallpaper_url', wallpaper.url);
     
     currentWallpaperData = wallpaper;
     updateWallpaperInfo(wallpaper);

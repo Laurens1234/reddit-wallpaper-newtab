@@ -20,7 +20,7 @@ body {
   min-height: 100vh;
   overflow: hidden;
   color: white;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: #000000;
 }
 
 #background {
@@ -1134,4 +1134,30 @@ body.light-wallpaper #overlay {
   padding: 40px;
   opacity: 0.7;
   font-size: 14px;
+}
+
+/* Zen Mode Toggle */
+.zen-mode-toggle {
+  background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2));
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(155, 89, 182, 0.3);
+}
+
+.zen-mode-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.zen-mode-toggle span {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.zen-mode-toggle .form-hint {
+  margin-top: 8px;
+  margin-left: 26px;
 }

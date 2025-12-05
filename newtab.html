@@ -66,6 +66,15 @@
   <div id="settings-modal" class="modal hidden">
     <div class="modal-content modal-wide">
       <h3>Wallpaper Settings</h3>
+      
+      <div class="form-group form-checkbox zen-mode-toggle">
+        <label>
+          <input type="checkbox" id="settings-zen-mode">
+          <span>🧘 Zen Mode</span>
+        </label>
+        <small class="form-hint">Hide all UI elements until you move your mouse</small>
+      </div>
+      
       <div class="form-group">
         <label for="settings-subreddit">Subreddits</label>
         <div class="subreddit-input-wrapper">
@@ -150,15 +159,10 @@
         <label for="settings-clock-format">Clock format</label>
         <select id="settings-clock-format">
           <option value="24h">24-hour (14:30)</option>
+          <option value="24h-seconds">24-hour with seconds (14:30:45)</option>
           <option value="12h">12-hour (2:30 PM)</option>
-          <option value="full">Full (2:30:45)</option>
+          <option value="12h-seconds">12-hour with seconds (2:30:45 PM)</option>
         </select>
-      </div>
-      <div class="form-group form-checkbox">
-        <label>
-          <input type="checkbox" id="settings-show-seconds">
-          <span>Show seconds</span>
-        </label>
       </div>
       <div class="form-group">
         <label for="settings-date-format">Date format</label>
