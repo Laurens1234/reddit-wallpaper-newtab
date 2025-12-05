@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
   zenMode: false,
   // Clock settings
   clockFormat: '24h',
-  dateFormat: 'full',
+  dateFormat: 'long', // Changed from 'full' to 'long' (more commonly used format)
   // Weather settings
   showWeather: false,
   weatherLocation: '',
@@ -125,17 +125,17 @@ function updateClockImmediate(clockFormat, dateFormat) {
   let dateStr;
   switch (dateFormat) {
     case 'short':
-      dateStr = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
       break;
     case 'numeric':
       dateStr = now.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
       break;
-    case 'weekday':
-      dateStr = now.toLocaleDateString(undefined, { weekday: 'long' });
+    case 'iso':
+      dateStr = now.toISOString().split('T')[0];
       break;
-    case 'full':
+    case 'long':
     default:
-      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
       break;
   }
   const date = document.getElementById('date');
@@ -224,7 +224,7 @@ async function updateClock() {
   const settings = await getWallpaperSettings();
   const now = new Date();
   const format = settings.clockFormat || '24h';
-  const dateFormat = settings.dateFormat || 'full';
+  const dateFormat = settings.dateFormat || 'long';
   
   // Cache formats for instant restore on next load
   localStorage.setItem('last_clock_format', format);
@@ -259,17 +259,17 @@ async function updateClock() {
   let dateStr;
   switch (dateFormat) {
     case 'short':
-      dateStr = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
       break;
     case 'numeric':
       dateStr = now.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
       break;
-    case 'weekday':
-      dateStr = now.toLocaleDateString(undefined, { weekday: 'long' });
+    case 'iso':
+      dateStr = now.toISOString().split('T')[0];
       break;
-    case 'full':
+    case 'long':
     default:
-      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
       break;
   }
   document.getElementById('date').textContent = dateStr;
@@ -676,6 +676,9 @@ function setupSettingsModal() {
       closeSettingsModal();
     }
   });
+  
+  // Detect location button
+  document.getElementById('detect-location-btn')?.addEventListener('click', detectLocation);
   
   // Add scheduled subreddit button
   document.getElementById('add-scheduled-btn')?.addEventListener('click', addScheduledSubredditRow);
@@ -1991,7 +1994,6 @@ function updateWallpaperInfo(wallpaper) {
 // Setup favorites modal events
 function setupFavoritesModal() {
   document.getElementById('view-favorites-btn').addEventListener('click', () => {
-    closeSettingsModal();
     openFavoritesModal();
   });
   
@@ -2005,7 +2007,6 @@ function setupFavoritesModal() {
   
   // Cached wallpapers modal
   document.getElementById('view-cached-btn').addEventListener('click', () => {
-    closeSettingsModal();
     openCachedModal();
   });
   
@@ -2031,7 +2032,6 @@ function setupFavoritesModal() {
   
   // Blacklist modal
   document.getElementById('view-blacklist-btn').addEventListener('click', () => {
-    closeSettingsModal();
     openBlacklistModal();
   });
   
@@ -2171,6 +2171,67 @@ async function removeFromBlacklist(url) {
 }
 
 // ==================== WEATHER ====================
+
+// Detect user's location using browser geolocation API
+async function detectLocation() {
+  const btn = document.getElementById('detect-location-btn');
+  const input = document.getElementById('settings-weather-location');
+  
+  if (!navigator.geolocation) {
+    showToast('Geolocation is not supported by your browser');
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.textContent = '...';
+  
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        timeout: 10000,
+        enableHighAccuracy: false
+      });
+    });
+    
+    const { latitude, longitude } = position.coords;
+    
+    // Use Nominatim reverse geocoding (OpenStreetMap)
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`,
+      {
+        headers: {
+          'User-Agent': 'Reddit Wallpaper Extension'
+        }
+      }
+    );
+    
+    if (!response.ok) throw new Error('Reverse geocoding failed');
+    
+    const data = await response.json();
+    if (data.address) {
+      // Try to get the most appropriate city name
+      const city = data.address.city || data.address.town || data.address.village || data.address.municipality;
+      if (city) {
+        input.value = city;
+        showToast(`Location detected: ${city}`);
+      } else {
+        throw new Error('Could not determine city name');
+      }
+    } else {
+      throw new Error('Could not determine city name');
+    }
+  } catch (error) {
+    console.error('Location detection failed:', error);
+    if (error.code === 1) {
+      showToast('Location access denied. Please enable location permissions.');
+    } else {
+      showToast('Failed to detect location. Please enter manually.');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📍';
+  }
+}
 
 async function updateWeather() {
   const settings = await getWallpaperSettings();

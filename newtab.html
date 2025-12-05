@@ -67,12 +67,13 @@
     <div class="modal-content modal-wide">
       <h3>Wallpaper Settings</h3>
       
+      <div class="modal-scroll-content">
       <div class="form-group form-checkbox zen-mode-toggle">
         <label>
           <input type="checkbox" id="settings-zen-mode">
           <span>🧘 Zen Mode</span>
         </label>
-        <small class="form-hint">Hide all UI elements until you move your mouse</small>
+        <small class="form-hint">UI elements only appear on mouse movement</small>
       </div>
       
       <div class="form-group">
@@ -183,8 +184,11 @@
       </div>
       <div class="form-group">
         <label for="settings-weather-location">Location (City name)</label>
-        <input type="text" id="settings-weather-location" placeholder="New York, London, Tokyo...">
-        <small class="form-hint">Enter a city name for weather data</small>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="settings-weather-location" placeholder="New York, London, Tokyo..." style="flex: 1;">
+          <button type="button" id="detect-location-btn" class="btn btn-secondary" title="Detect my location">📍</button>
+        </div>
+        <small class="form-hint">Enter a city name or detect your location automatically</small>
       </div>
       <div class="form-group">
         <label for="settings-weather-units">Temperature units</label>
@@ -234,11 +238,11 @@
         <button id="view-cached-btn" class="btn btn-secondary">Cached</button>
         <button id="view-blacklist-btn" class="btn btn-secondary">Blacklist</button>
       </div>
-      
-      <div class="modal-buttons">
-        <button id="settings-cancel" class="btn btn-secondary">Cancel</button>
-        <button id="settings-save" class="btn btn-primary">Save & Refresh</button>
-      </div>
+    </div>
+    
+    <div class="modal-buttons-sticky">
+      <button id="settings-cancel" class="btn btn-secondary">Cancel</button>
+      <button id="settings-save" class="btn btn-primary">Save & Refresh</button>
     </div>
   </div>
 
