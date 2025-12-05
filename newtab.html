@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <img id="background" src="" alt="">
+  <img id="background-next" src="" alt="">
+  <div id="overlay"></div>
+  
+  <div id="content">
+    <div id="clock-wrapper" class="hover-wrapper">
+      <div id="clock-date">
+        <div id="clock"></div>
+        <div id="date"></div>
+      </div>
+    </div>
+    
+    <div id="search-wrapper" class="hover-wrapper">
+      <div id="search-container">
+        <input type="text" id="search-input" placeholder="Search the web..." autofocus>
+      </div>
+    </div>
+    
+    <div id="shortcuts-wrapper" class="hover-wrapper">
+      <div id="shortcuts-container">
+        <div id="shortcuts"></div>
+      </div>
+    </div>
+    
+    <div id="wallpaper-info">
+      <span id="wallpaper-title"></span>
+      <span id="wallpaper-resolution"></span>
+      <div id="wallpaper-controls">
+        <button id="download-btn" title="Download wallpaper (D)">⬇</button>
+        <button id="favorite-btn" title="Add to favorites (F)">♡</button>
+        <button id="blacklist-btn" title="Don't show again (B)">✕</button>
+        <button id="refresh-btn" title="New wallpaper (R)">↻</button>
+        <button id="settings-btn" title="Settings">⚙</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Toast notification -->
+  <div id="toast" class="toast hidden"></div>
+  
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Loading wallpaper...</p>
+  </div>
+
+  <!-- Wallpaper Settings Modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content modal-wide">
+      <h3>Wallpaper Settings</h3>
+      <div class="form-group">
+        <label for="settings-subreddit">Subreddits</label>
+        <div class="subreddit-input-wrapper">
+          <input type="text" id="settings-subreddit" placeholder="EarthPorn, SpacePorn, CityPorn" autocomplete="off">
+          <div id="recent-subreddits" class="recent-dropdown hidden"></div>
+        </div>
+        <small class="form-hint">Separate multiple subreddits with commas</small>
+      </div>
+      <div class="form-group">
+        <label for="settings-sort">Sort by</label>
+        <select id="settings-sort">
+          <option value="hot">Hot</option>
+          <option value="top">Top</option>
+          <option value="new">New</option>
+        </select>
+      </div>
+      <div class="form-group" id="time-period-group">
+        <label for="settings-time">Time period</label>
+        <select id="settings-time">
+          <option value="day">Today</option>
+          <option value="week">This Week</option>
+          <option value="month">This Month</option>
+          <option value="year">This Year</option>
+          <option value="all">All Time</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="settings-resolution">Minimum resolution width</label>
+        <select id="settings-resolution">
+          <option value="0">Any (no filter)</option>
+          <option value="1280">1280px (HD)</option>
+          <option value="1920">1920px (Full HD)</option>
+          <option value="2560">2560px (2K)</option>
+          <option value="3840">3840px (4K)</option>
+        </select>
+        <small class="form-hint">Filter out images smaller than this width</small>
+      </div>
+      <div class="form-group form-checkbox">
+        <label>
+          <input type="checkbox" id="settings-nsfw">
+          <span>Allow NSFW content</span>
+        </label>
+      </div>
+      
+      <h4 class="settings-section">Slideshow</h4>
+      <div class="form-group">
+        <label for="settings-slideshow">Auto-change wallpaper</label>
+        <select id="settings-slideshow">
+          <option value="0">Off</option>
+          <option value="1">Every 1 minute</option>
+          <option value="5">Every 5 minutes</option>
+          <option value="10">Every 10 minutes</option>
+          <option value="30">Every 30 minutes</option>
+          <option value="60">Every hour</option>
+        </select>
+      </div>
+      
+      <h4 class="settings-section">Show on Hover Only</h4>
+      <div class="form-group hover-options">
+        <label class="hover-option">
+          <input type="checkbox" id="hover-clock">
+          <span>Clock & Date</span>
+        </label>
+        <label class="hover-option">
+          <input type="checkbox" id="hover-search">
+          <span>Search Bar</span>
+        </label>
+        <label class="hover-option">
+          <input type="checkbox" id="hover-shortcuts">
+          <span>Shortcuts</span>
+        </label>
+        <label class="hover-option">
+          <input type="checkbox" id="hover-wallpaper-info">
+          <span>Bottom Bar</span>
+        </label>
+      </div>
+      <small class="form-hint">Checked elements will be hidden until you move your mouse</small>
+      
+      <h4 class="settings-section">Favorites & Cache</h4>
+      <div class="form-group form-group-row">
+        <button id="view-favorites-btn" class="btn btn-secondary">Favorites</button>
+        <button id="view-cached-btn" class="btn btn-secondary">Cached</button>
+        <button id="view-blacklist-btn" class="btn btn-secondary">Blacklist</button>
+      </div>
+      
+      <div class="modal-buttons">
+        <button id="settings-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="settings-save" class="btn btn-primary">Save & Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Shortcut Modal -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="modal-title">Edit Shortcut</h3>
+      <div class="form-group">
+        <label for="edit-name">Name</label>
+        <input type="text" id="edit-name" placeholder="Shortcut name">
+      </div>
+      <div class="form-group">
+        <label for="edit-url">URL</label>
+        <input type="url" id="edit-url" placeholder="https://example.com">
+      </div>
+      <div class="modal-buttons">
+        <button id="modal-remove" class="btn btn-danger">Remove</button>
+        <div class="modal-buttons-right">
+          <button id="modal-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="modal-save" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Favorites Modal -->
+  <div id="favorites-modal" class="modal hidden">
+    <div class="modal-content modal-wide">
+      <h3>Favorite Wallpapers</h3>
+      <div id="favorites-grid" class="favorites-grid"></div>
+      <div id="no-favorites" class="no-favorites hidden">
+        <p>No favorites yet! Click the ♡ button on a wallpaper to save it.</p>
+      </div>
+      <div class="modal-buttons">
+        <button id="favorites-close" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cached Wallpapers Modal -->
+  <div id="cached-modal" class="modal hidden">
+    <div class="modal-content modal-wide">
+      <h3>Cached Wallpapers <span id="cached-count"></span></h3>
+      <div id="cached-grid" class="favorites-grid"></div>
+      <div id="no-cached" class="no-favorites hidden">
+        <p>No cached wallpapers. Open a new tab to fetch some!</p>
+      </div>
+      <div class="modal-buttons">
+        <button id="clear-cache-btn" class="btn btn-danger">Clear Cache</button>
+        <button id="cached-close" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Blacklisted Wallpapers Modal -->
+  <div id="blacklist-modal" class="modal hidden">
+    <div class="modal-content modal-wide">
+      <h3>Blacklisted Wallpapers <span id="blacklist-count"></span></h3>
+      <div id="blacklist-grid" class="favorites-grid"></div>
+      <div id="no-blacklist" class="no-favorites hidden">
+        <p>No blacklisted wallpapers.</p>
+      </div>
+      <div class="modal-buttons">
+        <button id="clear-blacklist-btn" class="btn btn-danger">Clear Blacklist</button>
+        <button id="blacklist-close" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="newtab.js"></script>
+</body>
+</html>

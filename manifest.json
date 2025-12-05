@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "EarthPorn Wallpaper New Tab",
+  "version": "1.0.0",
+  "description": "Beautiful wallpapers from r/EarthPorn as your new tab background",
+  "permissions": [
+    "storage",
+    "topSites",
+    "search"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
