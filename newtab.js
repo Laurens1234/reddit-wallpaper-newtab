@@ -6,6 +6,28 @@ const DEFAULT_SETTINGS = {
   minResolution: 0,
   allowNsfw: false,
   slideshowInterval: 0,
+  allowImages: true,
+  allowGifs: true,
+  allowVideos: true,
+  favoritesOnly: false,
+  // Clock settings
+  clockFormat: '24',
+  showSeconds: false,
+  dateFormat: 'full',
+  // Weather settings
+  showWeather: false,
+  weatherLocation: '',
+  weatherUnit: 'celsius',
+  // Scheduled subreddits
+  useSchedule: false,
+  schedule: {
+    morning: '',   // 6am-12pm
+    afternoon: '', // 12pm-6pm
+    evening: '',   // 6pm-12am
+    night: ''      // 12am-6am
+  },
+  // Color filter
+  colorFilter: 'none',
   hoverOnly: {
     clock: false,
     search: false,
@@ -20,11 +42,15 @@ const SETTINGS_KEY = 'wallpaper_settings';
 const RECENT_SUBREDDITS_KEY = 'recent_subreddits';
 const FAVORITES_KEY = 'favorite_wallpapers';
 const BLACKLIST_KEY = 'blacklisted_wallpapers';
+const WALLPAPER_HISTORY_KEY = 'wallpaper_history';
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 const MAX_RECENT_SUBREDDITS = 5;
+const MAX_HISTORY = 50;
 
 let slideshowInterval = null;
 let currentWallpaperData = null;
+let wallpaperHistory = [];
+let historyIndex = -1;
 
 // Initialize the new tab
 document.addEventListener('DOMContentLoaded', async () => {
@@ -36,15 +62,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSettingsModal();
   setupFavoritesModal();
   await loadShortcuts();
+  await loadWallpaperHistory();
   await loadWallpaper();
   
   // Apply hover-only settings
   const settings = await getWallpaperSettings();
   applyHoverSettings(settings.hoverOnly || {});
   
+  // Initialize weather
+  if (settings.showWeather && settings.weatherLocation) {
+    updateWeather();
+    setInterval(updateWeather, 30 * 60 * 1000); // Update every 30 min
+  }
+  
+  // Weather widget click - open weather website
+  document.getElementById('weather-widget')?.addEventListener('click', openWeatherWebsite);
+
   document.getElementById('refresh-btn').addEventListener('click', () => {
     location.reload();
   });
+  
+  // History back button
+  document.getElementById('back-btn')?.addEventListener('click', goBackInHistory);
   
   document.getElementById('settings-btn').addEventListener('click', () => {
     openSettingsModal();
@@ -53,6 +92,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('download-btn').addEventListener('click', downloadWallpaper);
   document.getElementById('favorite-btn').addEventListener('click', toggleFavorite);
   document.getElementById('blacklist-btn').addEventListener('click', blacklistWallpaper);
+  
+  // Search wallpapers button
+  document.getElementById('search-wallpapers-btn')?.addEventListener('click', openSearchModal);
   
   // Keyboard shortcuts
   document.addEventListener('keydown', handleKeyboard);
@@ -79,18 +121,68 @@ function handleKeyboard(e) {
     case 'b':
       blacklistWallpaper();
       break;
+    case 'arrowleft':
+      goBackInHistory();
+      break;
   }
 }
 
 // Clock functionality
-function updateClock() {
+async function updateClock() {
+  const settings = await getWallpaperSettings();
   const now = new Date();
-  const hours = now.getHours().toString().padStart(2, '0');
-  const minutes = now.getMinutes().toString().padStart(2, '0');
-  document.getElementById('clock').textContent = `${hours}:${minutes}`;
   
-  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-  document.getElementById('date').textContent = now.toLocaleDateString(undefined, options);
+  // Format hours based on 12/24 hour setting
+  let hours = now.getHours();
+  let ampm = '';
+  const is12Hour = settings.clockFormat === '12h';
+  
+  if (is12Hour) {
+    ampm = hours >= 12 ? ' PM' : ' AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // 0 should be 12
+  }
+  
+  // For "full" format, use 12-hour style without padding, no AM/PM
+  if (settings.clockFormat === 'full') {
+    hours = now.getHours() % 12;
+    hours = hours ? hours : 12;
+  }
+  
+  // For "full" format, don't pad the hours (e.g., "2:30:45" not "02:30:45")
+  const hoursStr = settings.clockFormat === 'full' 
+    ? hours.toString() 
+    : hours.toString().padStart(2, '0');
+  const minutes = now.getMinutes().toString().padStart(2, '0');
+  const seconds = now.getSeconds().toString().padStart(2, '0');
+  
+  let timeStr = `${hoursStr}:${minutes}`;
+  // "full" format always shows seconds, otherwise check setting
+  if (settings.clockFormat === 'full' || settings.showSeconds) {
+    timeStr += `:${seconds}`;
+  }
+  timeStr += ampm;
+  
+  document.getElementById('clock').textContent = timeStr;
+  
+  // Format date based on setting
+  let dateStr;
+  switch (settings.dateFormat) {
+    case 'short':
+      dateStr = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      break;
+    case 'numeric':
+      dateStr = now.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+      break;
+    case 'weekday':
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'long' });
+      break;
+    case 'full':
+    default:
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      break;
+  }
+  document.getElementById('date').textContent = dateStr;
 }
 
 // Search functionality
@@ -457,6 +549,183 @@ function setupSettingsModal() {
       closeSettingsModal();
     }
   });
+  
+  // Add scheduled subreddit button
+  document.getElementById('add-scheduled-btn')?.addEventListener('click', addScheduledSubredditRow);
+  
+  // Setup search modal
+  setupSearchModal();
+  
+  // Setup color filter modal
+  setupColorFilterModal();
+}
+
+// Setup search modal event listeners
+function setupSearchModal() {
+  const searchModal = document.getElementById('search-modal');
+  const searchQuery = document.getElementById('search-query');
+  
+  document.getElementById('search-cancel')?.addEventListener('click', closeSearchModal);
+  document.getElementById('search-submit')?.addEventListener('click', () => {
+    searchWallpapers(searchQuery?.value || '');
+  });
+  
+  searchQuery?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      searchWallpapers(searchQuery.value);
+    }
+  });
+  
+  searchModal?.addEventListener('click', (e) => {
+    if (e.target.id === 'search-modal') {
+      closeSearchModal();
+    }
+  });
+}
+
+// Setup color filter modal event listeners
+function setupColorFilterModal() {
+  const colorModal = document.getElementById('color-filter-modal');
+  
+  document.getElementById('color-filter-btn')?.addEventListener('click', openColorFilterModal);
+  document.getElementById('color-filter-close')?.addEventListener('click', closeColorFilterModal);
+  document.getElementById('clear-color-filter')?.addEventListener('click', clearColorFilter);
+  
+  colorModal?.addEventListener('click', (e) => {
+    if (e.target.id === 'color-filter-modal') {
+      closeColorFilterModal();
+    }
+  });
+  
+  // Color button click handlers
+  document.querySelectorAll('.color-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const color = btn.dataset.color;
+      setColorFilter(color);
+    });
+  });
+}
+
+function openColorFilterModal() {
+  const modal = document.getElementById('color-filter-modal');
+  modal?.classList.remove('hidden');
+  
+  // Highlight active color if any
+  updateColorFilterUI();
+}
+
+function closeColorFilterModal() {
+  document.getElementById('color-filter-modal')?.classList.add('hidden');
+}
+
+async function setColorFilter(color) {
+  const settings = await getWallpaperSettings();
+  settings.colorFilter = color;
+  await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+  
+  updateColorFilterUI();
+  showToast(`Filtering by ${color} colors`);
+  
+  // Trigger new wallpaper fetch with filter
+  closeColorFilterModal();
+  location.reload();
+}
+
+async function clearColorFilter() {
+  const settings = await getWallpaperSettings();
+  settings.colorFilter = null;
+  await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+  
+  updateColorFilterUI();
+  showToast('Color filter cleared');
+  
+  document.getElementById('color-filter-btn')?.classList.remove('active');
+  closeColorFilterModal();
+  location.reload();
+}
+
+async function updateColorFilterUI() {
+  const settings = await getWallpaperSettings();
+  const activeColor = settings.colorFilter;
+  
+  // Update button states
+  document.querySelectorAll('.color-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.color === activeColor);
+  });
+  
+  // Update current filter display
+  const currentFilterEl = document.getElementById('current-color-filter');
+  const activeColorNameEl = document.getElementById('active-color-name');
+  
+  if (activeColor && currentFilterEl && activeColorNameEl) {
+    activeColorNameEl.textContent = activeColor.charAt(0).toUpperCase() + activeColor.slice(1);
+    currentFilterEl.classList.remove('hidden');
+  } else {
+    currentFilterEl?.classList.add('hidden');
+  }
+  
+  // Update toolbar button
+  document.getElementById('color-filter-btn')?.classList.toggle('active', !!activeColor);
+}
+
+// Scheduled subreddits UI helpers
+function renderScheduledSubreddits(scheduled) {
+  const container = document.getElementById('scheduled-subreddits-list');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  
+  scheduled.forEach((item, index) => {
+    const row = createScheduledSubredditRow(item, index);
+    container.appendChild(row);
+  });
+}
+
+function createScheduledSubredditRow(item = { startTime: '09:00', endTime: '17:00', subreddit: '' }, index) {
+  const row = document.createElement('div');
+  row.className = 'scheduled-item';
+  row.dataset.index = index;
+  
+  row.innerHTML = `
+    <input type="time" class="scheduled-start" value="${item.startTime}" title="Start time">
+    <span>-</span>
+    <input type="time" class="scheduled-end" value="${item.endTime}" title="End time">
+    <input type="text" class="scheduled-subreddit" value="${item.subreddit}" placeholder="Subreddit name">
+    <button type="button" class="btn-remove" title="Remove">✕</button>
+  `;
+  
+  row.querySelector('.btn-remove').addEventListener('click', () => {
+    row.remove();
+  });
+  
+  return row;
+}
+
+function addScheduledSubredditRow() {
+  const container = document.getElementById('scheduled-subreddits-list');
+  if (!container) return;
+  
+  const index = container.children.length;
+  const row = createScheduledSubredditRow({ startTime: '09:00', endTime: '17:00', subreddit: '' }, index);
+  container.appendChild(row);
+}
+
+function getScheduledSubredditsFromUI() {
+  const container = document.getElementById('scheduled-subreddits-list');
+  if (!container) return [];
+  
+  const scheduled = [];
+  container.querySelectorAll('.scheduled-item').forEach(row => {
+    const startTime = row.querySelector('.scheduled-start')?.value || '';
+    const endTime = row.querySelector('.scheduled-end')?.value || '';
+    const subreddit = row.querySelector('.scheduled-subreddit')?.value?.trim() || '';
+    
+    if (startTime && endTime && subreddit) {
+      scheduled.push({ startTime, endTime, subreddit });
+    }
+  });
+  
+  return scheduled;
 }
 
 // Get recent subreddits from storage
@@ -518,12 +787,34 @@ async function openSettingsModal() {
   document.getElementById('settings-nsfw').checked = settings.allowNsfw;
   document.getElementById('settings-slideshow').value = settings.slideshowInterval || 0;
   
+  // Load media type settings
+  document.getElementById('settings-images').checked = settings.allowImages !== false;
+  document.getElementById('settings-gifs').checked = settings.allowGifs !== false;
+  document.getElementById('settings-videos').checked = settings.allowVideos !== false;
+  
   // Load hover-only settings
   const hoverOnly = settings.hoverOnly || {};
   document.getElementById('hover-clock').checked = hoverOnly.clock || false;
   document.getElementById('hover-search').checked = hoverOnly.search || false;
   document.getElementById('hover-shortcuts').checked = hoverOnly.shortcuts || false;
   document.getElementById('hover-wallpaper-info').checked = hoverOnly.wallpaperInfo || false;
+  
+  // Load clock format settings
+  document.getElementById('settings-clock-format').value = settings.clockFormat || '24h';
+  document.getElementById('settings-show-seconds').checked = settings.showSeconds || false;
+  document.getElementById('settings-date-format').value = settings.dateFormat || 'full';
+  
+  // Load weather settings
+  document.getElementById('settings-weather-enabled').checked = settings.showWeather || false;
+  document.getElementById('settings-weather-location').value = settings.weatherLocation || '';
+  document.getElementById('settings-weather-units').value = settings.weatherUnits || 'celsius';
+  
+  // Load favorites only setting
+  document.getElementById('settings-favorites-only').checked = settings.favoritesOnly || false;
+  
+  // Load scheduled subreddits
+  document.getElementById('settings-scheduled-enabled').checked = settings.scheduledEnabled || false;
+  renderScheduledSubreddits(settings.scheduledSubreddits || []);
   
   // Show/hide time period based on current sort
   document.getElementById('time-period-group').style.display = 
@@ -592,6 +883,17 @@ async function saveSettings() {
   const allowNsfw = document.getElementById('settings-nsfw').checked;
   const slideshowInterval = parseInt(document.getElementById('settings-slideshow').value);
   
+  // Media type settings
+  const allowImages = document.getElementById('settings-images').checked;
+  const allowGifs = document.getElementById('settings-gifs').checked;
+  const allowVideos = document.getElementById('settings-videos').checked;
+  
+  // At least one media type must be selected
+  if (!allowImages && !allowGifs && !allowVideos) {
+    alert('Please select at least one media type');
+    return;
+  }
+  
   // Hover-only settings
   const hoverOnly = {
     clock: document.getElementById('hover-clock').checked,
@@ -600,12 +902,45 @@ async function saveSettings() {
     wallpaperInfo: document.getElementById('hover-wallpaper-info').checked
   };
   
-  const settings = { subreddit, sort, time, minResolution, allowNsfw, slideshowInterval, hoverOnly };
+  // Clock format settings
+  const clockFormat = document.getElementById('settings-clock-format').value;
+  const showSeconds = document.getElementById('settings-show-seconds').checked;
+  const dateFormat = document.getElementById('settings-date-format').value;
+  
+  // Weather settings
+  const showWeather = document.getElementById('settings-weather-enabled').checked;
+  const weatherLocation = document.getElementById('settings-weather-location').value.trim();
+  const weatherUnits = document.getElementById('settings-weather-units').value;
+  
+  // Favorites only setting
+  const favoritesOnly = document.getElementById('settings-favorites-only').checked;
+  
+  // Scheduled subreddits
+  const scheduledEnabled = document.getElementById('settings-scheduled-enabled').checked;
+  const scheduledSubreddits = getScheduledSubredditsFromUI();
+  
+  const settings = { 
+    subreddit, sort, time, minResolution, allowNsfw, slideshowInterval, 
+    allowImages, allowGifs, allowVideos, hoverOnly,
+    clockFormat, showSeconds, dateFormat,
+    showWeather, weatherLocation, weatherUnits,
+    favoritesOnly,
+    scheduledEnabled, scheduledSubreddits
+  };
   
   await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
   
   // Apply hover-only settings immediately
   applyHoverSettings(hoverOnly);
+  
+  // Update weather widget visibility
+  const weatherWidget = document.getElementById('weather-widget');
+  if (showWeather && weatherLocation) {
+    weatherWidget?.classList.remove('hidden');
+    updateWeather();
+  } else {
+    weatherWidget?.classList.add('hidden');
+  }
   
   // Save each subreddit to recents
   for (const sub of subreddits) {
@@ -636,17 +971,41 @@ async function loadWallpaper() {
   
   try {
     const settings = await getWallpaperSettings();
+    
+    // Check if favorites only mode
+    if (settings.favoritesOnly) {
+      const favResult = await chrome.storage.local.get([FAVORITES_KEY]);
+      const favorites = favResult[FAVORITES_KEY] || [];
+      
+      if (favorites.length > 0) {
+        const randomIndex = Math.floor(Math.random() * favorites.length);
+        const wallpaper = favorites[randomIndex];
+        setWallpaperFast(wallpaper);
+        await addToHistory(wallpaper);
+        loading.classList.add('hidden');
+        return;
+      }
+    }
+    
     const cacheKey = `${CACHE_KEY}_${settings.subreddit}_${settings.sort}_${settings.time}_${settings.minResolution}_${settings.allowNsfw}`;
     const result = await chrome.storage.local.get([cacheKey]);
     const cached = result[cacheKey];
     
     // If we have cached wallpapers, pick a random one immediately
     if (cached && cached.wallpapers && cached.wallpapers.length > 0) {
-      const randomIndex = Math.floor(Math.random() * cached.wallpapers.length);
-      const wallpaper = cached.wallpapers[randomIndex];
+      let wallpapers = cached.wallpapers;
+      
+      // Apply color filter if set
+      if (settings.colorFilter && settings.colorFilter !== 'none') {
+        wallpapers = await filterByColor(wallpapers, settings.colorFilter);
+      }
+      
+      const randomIndex = Math.floor(Math.random() * wallpapers.length);
+      const wallpaper = wallpapers[randomIndex];
       
       // Show wallpaper immediately (don't wait for preload)
       setWallpaperFast(wallpaper);
+      await addToHistory(wallpaper);
       loading.classList.add('hidden');
       
       // Refresh cache in background if it's getting old (> 15 min)
@@ -741,7 +1100,10 @@ function getResolution(post) {
 async function fetchWallpapers() {
   try {
     const settings = await getWallpaperSettings();
-    const subreddits = parseSubreddits(settings.subreddit);
+    
+    // Use scheduled subreddit if enabled
+    const subredditSource = getScheduledSubreddit(settings);
+    const subreddits = parseSubreddits(subredditSource);
     
     if (subreddits.length === 0) {
       return [];
@@ -786,24 +1148,31 @@ async function fetchWallpapers() {
               return false;
             }
             
-            // Skip videos
-            if (post.is_video || post.media || (post.url && post.url.includes('v.redd.it'))) {
-              return false;
-            }
-            
             // Skip galleries (for now - they have multiple images)
             if (post.is_gallery) {
               return false;
             }
             
-            // Must have a valid image URL
+            // Check for video content (Reddit hosted videos, v.redd.it)
+            const isVideo = post.is_video || 
+                           (post.media && post.media.reddit_video) ||
+                           (post.url && post.url.includes('v.redd.it')) ||
+                           (post.preview && post.preview.reddit_video_preview);
+            
+            // Must have a valid image/video URL
             const url = post.url || '';
-            const hasDirectImage = url.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i) || 
+            const hasDirectImage = url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || 
                             url.includes('i.redd.it') ||
                             url.includes('i.imgur.com');
             
+            const hasDirectVideo = url.match(/\.(mp4|webm|gifv)(\?.*)?$/i) ||
+                            url.includes('v.redd.it') ||
+                            (url.includes('imgur.com') && url.endsWith('.gifv'));
+            
             // Check if there's a preview image available (but only for link posts, not self posts)
             const hasPreview = post.post_hint === 'image' ||
+                              post.post_hint === 'hosted:video' ||
+                              post.post_hint === 'rich:video' ||
                               (post.preview && 
                                post.preview.images && 
                                post.preview.images[0] &&
@@ -823,7 +1192,27 @@ async function fetchWallpapers() {
               return false;
             }
             
-            return (hasDirectImage || hasPreview) && post.score > 50;
+            // Determine media type
+            const isGif = url.includes('.gif') || 
+                         (post.preview?.images?.[0]?.variants?.gif) ||
+                         (post.preview?.reddit_video_preview?.is_gif) ||
+                         (url.includes('imgur.com') && url.endsWith('.gifv'));
+            
+            const isVideoContent = (isVideo || hasDirectVideo) && !isGif;
+            const isImageContent = (hasDirectImage || hasPreview) && !isGif && !isVideo && !hasDirectVideo;
+            
+            // Filter by media type settings
+            if (isImageContent && settings.allowImages === false) {
+              return false;
+            }
+            if (isGif && settings.allowGifs === false) {
+              return false;
+            }
+            if (isVideoContent && settings.allowVideos === false) {
+              return false;
+            }
+            
+            return hasDirectImage || hasDirectVideo || hasPreview || isVideo;
           })
           .map(post => ({
             url: getImageUrl(post),
@@ -878,6 +1267,47 @@ async function fetchWallpapers() {
 function getImageUrl(post) {
   const url = post.url || '';
   
+  // Debug logging for GIFs
+  if (url.includes('.gif') || (post.preview?.images?.[0]?.variants?.gif) || post.preview?.reddit_video_preview) {
+    console.log('GIF/Video post found:', {
+      url: url,
+      hasGifVariant: !!post.preview?.images?.[0]?.variants?.gif,
+      hasRedditVideoPreview: !!post.preview?.reddit_video_preview,
+      redditVideoUrl: post.preview?.reddit_video_preview?.fallback_url,
+      isGif: post.preview?.reddit_video_preview?.is_gif
+    });
+  }
+  
+  // Check for Reddit hosted video (is_video posts)
+  if (post.is_video && post.media && post.media.reddit_video) {
+    const redditVideo = post.media.reddit_video;
+    if (redditVideo.fallback_url) {
+      console.log('Using Reddit hosted video URL:', redditVideo.fallback_url);
+      return redditVideo.fallback_url;
+    }
+  }
+  
+  // Check for Reddit video preview (often used for GIFs and crossposts)
+  if (post.preview && post.preview.reddit_video_preview) {
+    const videoPreview = post.preview.reddit_video_preview;
+    if (videoPreview.fallback_url) {
+      console.log('Using Reddit video preview URL:', videoPreview.fallback_url);
+      return videoPreview.fallback_url;
+    }
+  }
+  
+  // Check for animated GIF in preview variants first
+  if (post.preview && post.preview.images && post.preview.images[0]) {
+    const image = post.preview.images[0];
+    
+    // Check for GIF variant (animated)
+    if (image.variants && image.variants.gif && image.variants.gif.source) {
+      const gifUrl = image.variants.gif.source.url.replace(/&amp;/g, '&');
+      console.log('Using GIF variant URL:', gifUrl);
+      return gifUrl;
+    }
+  }
+  
   // Get preview URL as potential fallback
   let previewUrl = null;
   if (post.preview && post.preview.images && post.preview.images[0]) {
@@ -889,13 +1319,28 @@ function getImageUrl(post) {
   
   // Handle i.redd.it links first (these are usually best quality)
   if (url.includes('i.redd.it')) {
-    // For i.redd.it, prefer preview URL as it's more reliable for older posts
+    // For GIFs, always use direct URL (preview converts to static)
+    if (url.includes('.gif')) {
+      console.log('Using direct i.redd.it GIF URL:', url);
+      return url;
+    }
+    // For other images, prefer preview URL as it's more reliable for older posts
     return previewUrl || url;
   }
   
   // If it's already a direct image URL, use it
-  if (url.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
-    return url.split('?')[0]; // Remove query params
+  if (url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)) {
+    const directUrl = url.split('?')[0];
+    if (url.includes('.gif')) {
+      console.log('Using direct GIF URL:', directUrl);
+    }
+    return directUrl; // Remove query params
+  }
+  
+  // Handle Imgur .gifv - keep as .gifv, we'll play as video
+  if (url.includes('imgur.com') && url.endsWith('.gifv')) {
+    console.log('Using Imgur gifv (will play as video):', url);
+    return url;
   }
   
   // Handle imgur links
@@ -945,7 +1390,23 @@ async function getNewWallpaper(retryCount = 0) {
   const loading = document.getElementById('loading');
   
   try {
-    const wallpapers = await fetchWallpapers();
+    const settings = await getWallpaperSettings();
+    let wallpapers;
+    
+    // If favorites only mode is enabled, use favorites
+    if (settings.favoritesOnly) {
+      const favResult = await chrome.storage.local.get([FAVORITES_KEY]);
+      wallpapers = favResult[FAVORITES_KEY] || [];
+      
+      if (wallpapers.length === 0) {
+        showToast('No favorites saved. Add some wallpapers to favorites first!');
+        loading.classList.add('hidden');
+        // Fall back to regular wallpapers
+        wallpapers = await fetchWallpapers();
+      }
+    } else {
+      wallpapers = await fetchWallpapers();
+    }
     
     if (wallpapers.length === 0) {
       showToast('No wallpapers found. Try a different subreddit or settings.');
@@ -953,9 +1414,17 @@ async function getNewWallpaper(retryCount = 0) {
       return;
     }
     
+    // Apply color filter if set
+    if (settings.colorFilter && settings.colorFilter !== 'none') {
+      wallpapers = await filterByColor(wallpapers, settings.colorFilter);
+    }
+    
     // Pick a random wallpaper
     const randomIndex = Math.floor(Math.random() * wallpapers.length);
     const wallpaper = wallpapers[randomIndex];
+    
+    // Add to history
+    await addToHistory(wallpaper);
     
     // Cache the current wallpaper
     await chrome.storage.local.set({
@@ -1003,9 +1472,45 @@ async function loadNewWallpaper() {
   await getNewWallpaper();
 }
 
+// Check if URL is a video format
+function isVideoUrl(url) {
+  if (!url) return false;
+  return url.endsWith('.gifv') || 
+         url.endsWith('.mp4') || 
+         url.endsWith('.webm') ||
+         url.includes('v.redd.it');
+}
+
 // Set the wallpaper (fast version - no preload wait)
 function setWallpaperFast(wallpaper) {
   const background = document.getElementById('background');
+  const backgroundVideo = document.getElementById('background-video');
+  
+  // Check if it's a video
+  if (isVideoUrl(wallpaper.url)) {
+    // Hide image, show video
+    background.style.display = 'none';
+    backgroundVideo.classList.add('active');
+    
+    // Convert .gifv to .mp4 for Imgur
+    let videoUrl = wallpaper.url;
+    if (videoUrl.endsWith('.gifv')) {
+      videoUrl = videoUrl.replace('.gifv', '.mp4');
+    }
+    
+    backgroundVideo.src = videoUrl;
+    backgroundVideo.play();
+    
+    currentWallpaperData = wallpaper;
+    updateWallpaperInfo(wallpaper);
+    updateFavoriteButton();
+    return;
+  }
+  
+  // It's an image - hide video, show image
+  backgroundVideo.classList.remove('active');
+  backgroundVideo.src = '';
+  background.style.display = 'block';
   
   // Create a test image to check if URL loads
   const testImg = new Image();
@@ -1034,6 +1539,34 @@ function setWallpaperFast(wallpaper) {
 function setWallpaper(wallpaper) {
   return new Promise((resolve, reject) => {
     const background = document.getElementById('background');
+    const backgroundVideo = document.getElementById('background-video');
+    
+    // Check if it's a video
+    if (isVideoUrl(wallpaper.url)) {
+      // Hide image, show video
+      background.style.display = 'none';
+      backgroundVideo.classList.add('active');
+      
+      // Convert .gifv to .mp4 for Imgur
+      let videoUrl = wallpaper.url;
+      if (videoUrl.endsWith('.gifv')) {
+        videoUrl = videoUrl.replace('.gifv', '.mp4');
+      }
+      
+      backgroundVideo.src = videoUrl;
+      backgroundVideo.play();
+      
+      currentWallpaperData = wallpaper;
+      updateWallpaperInfo(wallpaper);
+      updateFavoriteButton();
+      resolve();
+      return;
+    }
+    
+    // It's an image - hide video, show image
+    backgroundVideo.classList.remove('active');
+    backgroundVideo.src = '';
+    background.style.display = 'block';
     
     // Preload the image completely
     const img = new Image();
@@ -1482,4 +2015,416 @@ async function removeFromBlacklist(url) {
   blacklist = blacklist.filter(u => u !== url);
   await chrome.storage.local.set({ [BLACKLIST_KEY]: blacklist });
   showToast('Removed from blacklist');
+}
+
+// ==================== WEATHER ====================
+
+async function updateWeather() {
+  const settings = await getWallpaperSettings();
+  const weatherWidget = document.getElementById('weather-widget');
+  
+  if (!settings.showWeather || !settings.weatherLocation) {
+    weatherWidget?.classList.add('hidden');
+    return;
+  }
+  
+  try {
+    // First get coordinates from city name using geocoding API
+    const geoResponse = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(settings.weatherLocation)}&count=1`
+    );
+    
+    if (!geoResponse.ok) throw new Error('Geocoding failed');
+    
+    const geoData = await geoResponse.json();
+    if (!geoData.results || geoData.results.length === 0) {
+      throw new Error('Location not found');
+    }
+    
+    const { latitude, longitude, name } = geoData.results[0];
+    
+    // Fetch weather data
+    const unit = settings.weatherUnits === 'fahrenheit' ? 'fahrenheit' : 'celsius';
+    const weatherResponse = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&temperature_unit=${unit}`
+    );
+    
+    if (!weatherResponse.ok) throw new Error('Weather fetch failed');
+    
+    const weatherData = await weatherResponse.json();
+    const current = weatherData.current;
+    
+    const temp = Math.round(current.temperature_2m);
+    const tempUnit = unit === 'fahrenheit' ? '°F' : '°C';
+    const weatherCode = current.weather_code;
+    
+    // Weather codes to emoji/description
+    const weatherInfo = getWeatherInfo(weatherCode);
+    
+    // Update UI
+    const iconEl = document.getElementById('weather-icon');
+    const textEl = document.getElementById('weather-text');
+    
+    if (iconEl && textEl) {
+      iconEl.textContent = weatherInfo.icon;
+      textEl.innerHTML = `
+        <span id="weather-temp">${temp}${tempUnit}</span>
+        <span id="weather-desc">${weatherInfo.description}</span>
+        <span id="weather-location">${name}</span>
+      `;
+      weatherWidget?.classList.remove('hidden');
+    }
+  } catch (error) {
+    console.error('Weather fetch failed:', error);
+    weatherWidget?.classList.add('hidden');
+  }
+}
+
+async function openWeatherWebsite() {
+  const settings = await getWallpaperSettings();
+  if (settings.weatherLocation) {
+    const query = encodeURIComponent(settings.weatherLocation + ' weather');
+    window.open(`https://www.google.com/search?q=${query}`, '_blank');
+  }
+}
+
+function getWeatherInfo(code) {
+  const weatherCodes = {
+    0: { icon: '☀️', description: 'Clear' },
+    1: { icon: '🌤️', description: 'Mostly Clear' },
+    2: { icon: '⛅', description: 'Partly Cloudy' },
+    3: { icon: '☁️', description: 'Cloudy' },
+    45: { icon: '🌫️', description: 'Foggy' },
+    48: { icon: '🌫️', description: 'Icy Fog' },
+    51: { icon: '🌧️', description: 'Light Drizzle' },
+    53: { icon: '🌧️', description: 'Drizzle' },
+    55: { icon: '🌧️', description: 'Heavy Drizzle' },
+    61: { icon: '🌧️', description: 'Light Rain' },
+    63: { icon: '🌧️', description: 'Rain' },
+    65: { icon: '🌧️', description: 'Heavy Rain' },
+    66: { icon: '🌨️', description: 'Freezing Rain' },
+    67: { icon: '🌨️', description: 'Heavy Freezing Rain' },
+    71: { icon: '❄️', description: 'Light Snow' },
+    73: { icon: '❄️', description: 'Snow' },
+    75: { icon: '❄️', description: 'Heavy Snow' },
+    77: { icon: '❄️', description: 'Snow Grains' },
+    80: { icon: '🌦️', description: 'Light Showers' },
+    81: { icon: '🌦️', description: 'Showers' },
+    82: { icon: '⛈️', description: 'Heavy Showers' },
+    85: { icon: '🌨️', description: 'Snow Showers' },
+    86: { icon: '🌨️', description: 'Heavy Snow Showers' },
+    95: { icon: '⛈️', description: 'Thunderstorm' },
+    96: { icon: '⛈️', description: 'Thunderstorm with Hail' },
+    99: { icon: '⛈️', description: 'Thunderstorm with Heavy Hail' }
+  };
+  
+  return weatherCodes[code] || { icon: '🌡️', description: 'Unknown' };
+}
+
+// ==================== WALLPAPER HISTORY ====================
+
+async function loadWallpaperHistory() {
+  const data = await chrome.storage.local.get([WALLPAPER_HISTORY_KEY]);
+  wallpaperHistory = data[WALLPAPER_HISTORY_KEY] || [];
+  historyIndex = wallpaperHistory.length - 1;
+  updateBackButton();
+}
+
+async function addToHistory(wallpaper) {
+  if (!wallpaper || !wallpaper.url) return;
+  
+  // Don't add duplicates consecutively
+  if (wallpaperHistory.length > 0 && wallpaperHistory[wallpaperHistory.length - 1].url === wallpaper.url) {
+    return;
+  }
+  
+  wallpaperHistory.push(wallpaper);
+  
+  // Limit history size
+  if (wallpaperHistory.length > MAX_HISTORY) {
+    wallpaperHistory = wallpaperHistory.slice(-MAX_HISTORY);
+  }
+  
+  historyIndex = wallpaperHistory.length - 1;
+  
+  await chrome.storage.local.set({ [WALLPAPER_HISTORY_KEY]: wallpaperHistory });
+  updateBackButton();
+}
+
+function updateBackButton() {
+  const backBtn = document.getElementById('back-btn');
+  if (backBtn) {
+    backBtn.style.opacity = historyIndex > 0 ? '1' : '0.3';
+    backBtn.style.pointerEvents = historyIndex > 0 ? 'auto' : 'none';
+  }
+}
+
+async function goBackInHistory() {
+  if (historyIndex <= 0) return;
+  
+  historyIndex--;
+  const wallpaper = wallpaperHistory[historyIndex];
+  
+  if (wallpaper) {
+    await setWallpaperDirect(wallpaper);
+    updateBackButton();
+  }
+}
+
+async function setWallpaperDirect(wallpaper) {
+  const background = document.getElementById('background');
+  const backgroundVideo = document.getElementById('background-video');
+  
+  if (isVideoUrl(wallpaper.url)) {
+    background.style.display = 'none';
+    backgroundVideo.classList.add('active');
+    let videoUrl = wallpaper.url;
+    if (videoUrl.endsWith('.gifv')) {
+      videoUrl = videoUrl.replace('.gifv', '.mp4');
+    }
+    backgroundVideo.src = videoUrl;
+    backgroundVideo.play();
+  } else {
+    backgroundVideo.classList.remove('active');
+    backgroundVideo.src = '';
+    background.style.display = 'block';
+    background.src = wallpaper.url;
+  }
+  
+  currentWallpaperData = wallpaper;
+  updateWallpaperInfo(wallpaper);
+  updateFavoriteButton();
+}
+
+// ==================== SCHEDULED SUBREDDITS ====================
+
+function getScheduledSubreddit(settings) {
+  if (!settings.scheduledEnabled || !settings.scheduledSubreddits || settings.scheduledSubreddits.length === 0) {
+    return settings.subreddit;
+  }
+  
+  const now = new Date();
+  const currentTime = now.getHours() * 60 + now.getMinutes(); // Minutes since midnight
+  
+  for (const schedule of settings.scheduledSubreddits) {
+    const [startHour, startMin] = schedule.startTime.split(':').map(Number);
+    const [endHour, endMin] = schedule.endTime.split(':').map(Number);
+    
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+    
+    // Handle overnight schedules (e.g., 22:00 - 06:00)
+    if (endMinutes < startMinutes) {
+      // Schedule wraps around midnight
+      if (currentTime >= startMinutes || currentTime < endMinutes) {
+        return schedule.subreddit;
+      }
+    } else {
+      // Normal schedule
+      if (currentTime >= startMinutes && currentTime < endMinutes) {
+        return schedule.subreddit;
+      }
+    }
+  }
+  
+  // No matching schedule, use default
+  return settings.subreddit;
+}
+
+// ==================== SEARCH WALLPAPERS ====================
+
+function openSearchModal() {
+  const modal = document.getElementById('search-modal');
+  if (modal) {
+    document.getElementById('search-query').value = '';
+    document.getElementById('search-results').innerHTML = '';
+    modal.classList.remove('hidden');
+    document.getElementById('search-query').focus();
+  }
+}
+
+function closeSearchModal() {
+  document.getElementById('search-modal')?.classList.add('hidden');
+}
+
+async function searchWallpapers(query) {
+  if (!query.trim()) return;
+  
+  const settings = await getWallpaperSettings();
+  const subreddit = settings.subreddit.split(',')[0].trim(); // Use first subreddit
+  
+  const resultsEl = document.getElementById('search-results');
+  resultsEl.innerHTML = '<div class="loading-search">Searching...</div>';
+  
+  try {
+    const response = await fetch(
+      `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&limit=50&sort=relevance`
+    );
+    
+    if (!response.ok) throw new Error('Search failed');
+    
+    const data = await response.json();
+    const posts = data.data.children
+      .map(p => p.data)
+      .filter(post => {
+        if (post.is_self || post.is_gallery) return false;
+        const url = post.url || '';
+        return url.match(/\.(jpg|jpeg|png|gif|webp|mp4|gifv)(\?.*)?$/i) ||
+               url.includes('i.redd.it') ||
+               url.includes('i.imgur.com') ||
+               url.includes('v.redd.it') ||
+               post.preview?.reddit_video_preview;
+      });
+    
+    if (posts.length === 0) {
+      resultsEl.innerHTML = '<div class="no-results">No results found</div>';
+      return;
+    }
+    
+    resultsEl.innerHTML = '';
+    posts.forEach(post => {
+      const item = document.createElement('div');
+      item.className = 'search-result-item';
+      
+      const thumbUrl = post.thumbnail && post.thumbnail.startsWith('http') 
+        ? post.thumbnail 
+        : (post.preview?.images?.[0]?.source?.url?.replace(/&amp;/g, '&') || '');
+      
+      item.innerHTML = `
+        <img src="${thumbUrl}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>'">
+        <span class="search-result-title">${post.title.substring(0, 50)}${post.title.length > 50 ? '...' : ''}</span>
+      `;
+      
+      item.addEventListener('click', async () => {
+        const wallpaper = {
+          url: getImageUrlFromPost(post),
+          title: cleanTitle(post.title),
+          permalink: `https://www.reddit.com${post.permalink}`,
+          author: post.author,
+          subreddit: subreddit,
+          resolution: getResolution(post)
+        };
+        
+        if (wallpaper.url) {
+          await addToHistory(wallpaper);
+          await setWallpaperDirect(wallpaper);
+          closeSearchModal();
+        }
+      });
+      
+      resultsEl.appendChild(item);
+    });
+  } catch (error) {
+    console.error('Search error:', error);
+    resultsEl.innerHTML = '<div class="no-results">Search failed. Try again.</div>';
+  }
+}
+
+// Helper to get image URL from a post (used by search)
+function getImageUrlFromPost(post) {
+  const url = post.url || '';
+  
+  if (post.preview?.reddit_video_preview?.fallback_url) {
+    return post.preview.reddit_video_preview.fallback_url;
+  }
+  
+  if (post.is_video && post.media?.reddit_video?.fallback_url) {
+    return post.media.reddit_video.fallback_url;
+  }
+  
+  if (post.preview?.images?.[0]?.variants?.gif?.source?.url) {
+    return post.preview.images[0].variants.gif.source.url.replace(/&amp;/g, '&');
+  }
+  
+  if (url.includes('i.redd.it') || url.includes('i.imgur.com')) {
+    return url;
+  }
+  
+  if (url.match(/\.(jpg|jpeg|png|gif|webp|mp4|gifv)(\?.*)?$/i)) {
+    return url;
+  }
+  
+  if (post.preview?.images?.[0]?.source?.url) {
+    return post.preview.images[0].source.url.replace(/&amp;/g, '&');
+  }
+  
+  return null;
+}
+
+// ==================== COLOR FILTERING ====================
+
+function getDominantColor(imageUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 50;
+        canvas.height = 50;
+        ctx.drawImage(img, 0, 0, 50, 50);
+        
+        const imageData = ctx.getImageData(0, 0, 50, 50);
+        const data = imageData.data;
+        
+        let r = 0, g = 0, b = 0;
+        const pixelCount = data.length / 4;
+        
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+        }
+        
+        r = Math.round(r / pixelCount);
+        g = Math.round(g / pixelCount);
+        b = Math.round(b / pixelCount);
+        
+        // Determine dominant color category
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const lightness = (max + min) / 2 / 255;
+        
+        if (lightness < 0.2) {
+          resolve('dark');
+        } else if (lightness > 0.8) {
+          resolve('light');
+        } else if (r > g && r > b) {
+          resolve(r > 150 && g < 100 ? 'red' : 'warm');
+        } else if (g > r && g > b) {
+          resolve('green');
+        } else if (b > r && b > g) {
+          resolve('blue');
+        } else if (r > 200 && g > 150 && b < 100) {
+          resolve('warm');
+        } else {
+          resolve('neutral');
+        }
+      } catch (e) {
+        resolve('neutral');
+      }
+    };
+    
+    img.onerror = () => resolve('neutral');
+    img.src = imageUrl;
+  });
+}
+
+async function filterByColor(wallpapers, colorFilter) {
+  if (colorFilter === 'none') return wallpapers;
+  
+  // For performance, only analyze a subset
+  const analyzed = [];
+  for (const w of wallpapers.slice(0, 30)) {
+    const color = await getDominantColor(w.url);
+    if (color === colorFilter || 
+        (colorFilter === 'warm' && (color === 'red' || color === 'warm')) ||
+        (colorFilter === 'cool' && (color === 'blue' || color === 'green'))) {
+      analyzed.push(w);
+    }
+  }
+  
+  return analyzed.length > 0 ? analyzed : wallpapers;
 }

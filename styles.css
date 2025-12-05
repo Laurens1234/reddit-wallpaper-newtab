@@ -48,6 +48,22 @@ body {
   opacity: 0;
 }
 
+#background-video {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+  z-index: -1;
+  display: none;
+}
+
+#background-video.active {
+  display: block;
+}
+
 #overlay {
   position: fixed;
   top: 0;
@@ -317,6 +333,8 @@ body {
   border-radius: 16px;
   width: 100%;
   max-width: 400px;
+  max-height: 85vh;
+  overflow-y: auto;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
 
@@ -829,13 +847,19 @@ body.light-wallpaper #overlay {
 }
 
 /* Hover options styling */
-.hover-options {
+.hover-options,
+.media-type-options {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.hover-option {
+.media-type-options {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.hover-option,
+.media-option {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -846,16 +870,268 @@ body.light-wallpaper #overlay {
   transition: background 0.2s ease;
 }
 
-.hover-option:hover {
+.hover-option:hover,
+.media-option:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.hover-option input[type="checkbox"] {
+.hover-option input[type="checkbox"],
+.media-option input[type="checkbox"] {
   width: 16px;
   height: 16px;
   cursor: pointer;
 }
 
-.hover-option span {
+.hover-option span,
+.media-option span {
   font-size: 13px;
+}
+
+/* Weather Widget */
+#weather-widget {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  font-size: 14px;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+#weather-widget:hover {
+  background: rgba(0, 0, 0, 0.6);
+  transform: scale(1.02);
+}
+
+#weather-icon {
+  font-size: 24px;
+}
+
+#weather-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#weather-temp {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#weather-desc {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+#weather-location {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* Back button styling */
+#back-btn {
+  opacity: 0.5;
+}
+
+#back-btn:not(:disabled) {
+  opacity: 1;
+}
+
+#back-btn:disabled {
+  cursor: not-allowed;
+}
+
+/* Search Modal */
+#search-modal .form-group {
+  margin-bottom: 20px;
+}
+
+#search-query {
+  font-size: 16px;
+}
+
+/* Color Filter Modal */
+.color-filter-desc {
+  margin-bottom: 20px;
+  opacity: 0.8;
+  font-size: 14px;
+}
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.color-btn {
+  width: 100%;
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 50px;
+}
+
+.color-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.color-btn.selected {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px #3498db;
+  transform: scale(1.05);
+}
+
+.current-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.current-filter span {
+  font-size: 14px;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* Scheduled Subreddits */
+.scheduled-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 15px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.scheduled-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.scheduled-item input[type="time"] {
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: white;
+  font-size: 13px;
+}
+
+.scheduled-item input[type="text"] {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: white;
+  font-size: 13px;
+}
+
+.scheduled-item .btn-remove {
+  padding: 4px 8px;
+  background: rgba(231, 76, 60, 0.3);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.scheduled-item .btn-remove:hover {
+  background: rgba(231, 76, 60, 0.6);
+}
+
+#add-scheduled-btn {
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* Color filter button active state */
+#color-filter-btn.active {
+  background: rgba(52, 152, 219, 0.6);
+}
+
+/* Weather widget hidden by default */
+#weather-widget.hidden {
+  display: none;
+}
+
+/* Search Results Grid */
+.search-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  position: relative;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 16/9;
+  background: rgba(255, 255, 255, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-result-item:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.search-result-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.search-result-title {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  font-size: 11px;
+  line-height: 1.3;
+  color: white;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.search-result-item:hover .search-result-title {
+  opacity: 1;
+}
+
+.loading-search,
+.no-results {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px;
+  opacity: 0.7;
+  font-size: 14px;
 }

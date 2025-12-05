@@ -9,6 +9,7 @@
 <body>
   <img id="background" src="" alt="">
   <img id="background-next" src="" alt="">
+  <video id="background-video" autoplay loop muted playsinline></video>
   <div id="overlay"></div>
   
   <div id="content">
@@ -21,7 +22,7 @@
     
     <div id="search-wrapper" class="hover-wrapper">
       <div id="search-container">
-        <input type="text" id="search-input" placeholder="Search the web..." autofocus>
+        <input type="text" id="search-input" placeholder="Search the web...">
       </div>
     </div>
     
@@ -31,13 +32,22 @@
       </div>
     </div>
     
+    <!-- Weather widget -->
+    <div id="weather-widget" class="hidden">
+      <span id="weather-icon"></span>
+      <span id="weather-text"></span>
+    </div>
+    
     <div id="wallpaper-info">
       <span id="wallpaper-title"></span>
       <span id="wallpaper-resolution"></span>
       <div id="wallpaper-controls">
+        <button id="back-btn" title="Previous wallpaper (←)">◀</button>
         <button id="download-btn" title="Download wallpaper (D)">⬇</button>
         <button id="favorite-btn" title="Add to favorites (F)">♡</button>
         <button id="blacklist-btn" title="Don't show again (B)">✕</button>
+        <button id="search-wallpapers-btn" title="Search wallpapers">🔍</button>
+        <button id="color-filter-btn" title="Filter by color">🎨</button>
         <button id="refresh-btn" title="New wallpaper (R)">↻</button>
         <button id="settings-btn" title="Settings">⚙</button>
       </div>
@@ -100,6 +110,22 @@
         </label>
       </div>
       
+      <h4 class="settings-section">Media Types</h4>
+      <div class="form-group media-type-options">
+        <label class="media-option">
+          <input type="checkbox" id="settings-images" checked>
+          <span>Images</span>
+        </label>
+        <label class="media-option">
+          <input type="checkbox" id="settings-gifs" checked>
+          <span>GIFs</span>
+        </label>
+        <label class="media-option">
+          <input type="checkbox" id="settings-videos" checked>
+          <span>Videos</span>
+        </label>
+      </div>
+      
       <h4 class="settings-section">Slideshow</h4>
       <div class="form-group">
         <label for="settings-slideshow">Auto-change wallpaper</label>
@@ -112,6 +138,70 @@
           <option value="60">Every hour</option>
         </select>
       </div>
+      <div class="form-group form-checkbox">
+        <label>
+          <input type="checkbox" id="settings-favorites-only">
+          <span>Only show favorites in slideshow</span>
+        </label>
+      </div>
+      
+      <h4 class="settings-section">Clock & Date Format</h4>
+      <div class="form-group">
+        <label for="settings-clock-format">Clock format</label>
+        <select id="settings-clock-format">
+          <option value="24h">24-hour (14:30)</option>
+          <option value="12h">12-hour (2:30 PM)</option>
+          <option value="full">Full (2:30:45)</option>
+        </select>
+      </div>
+      <div class="form-group form-checkbox">
+        <label>
+          <input type="checkbox" id="settings-show-seconds">
+          <span>Show seconds</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label for="settings-date-format">Date format</label>
+        <select id="settings-date-format">
+          <option value="long">Monday, January 1, 2024</option>
+          <option value="short">Mon, Jan 1, 2024</option>
+          <option value="numeric">01/01/2024</option>
+          <option value="iso">2024-01-01</option>
+        </select>
+      </div>
+      
+      <h4 class="settings-section">Weather</h4>
+      <div class="form-group form-checkbox">
+        <label>
+          <input type="checkbox" id="settings-weather-enabled">
+          <span>Show weather widget</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label for="settings-weather-location">Location (City name)</label>
+        <input type="text" id="settings-weather-location" placeholder="New York, London, Tokyo...">
+        <small class="form-hint">Enter a city name for weather data</small>
+      </div>
+      <div class="form-group">
+        <label for="settings-weather-units">Temperature units</label>
+        <select id="settings-weather-units">
+          <option value="celsius">Celsius (°C)</option>
+          <option value="fahrenheit">Fahrenheit (°F)</option>
+        </select>
+      </div>
+      
+      <h4 class="settings-section">Scheduled Subreddits</h4>
+      <div class="form-group form-checkbox">
+        <label>
+          <input type="checkbox" id="settings-scheduled-enabled">
+          <span>Enable scheduled subreddits</span>
+        </label>
+        <small class="form-hint">Use different subreddits at different times of day</small>
+      </div>
+      <div id="scheduled-subreddits-list" class="scheduled-list">
+        <!-- Scheduled items will be added here -->
+      </div>
+      <button type="button" id="add-scheduled-btn" class="btn btn-secondary btn-small">+ Add Time Slot</button>
       
       <h4 class="settings-section">Show on Hover Only</h4>
       <div class="form-group hover-options">
@@ -210,6 +300,52 @@
       <div class="modal-buttons">
         <button id="clear-blacklist-btn" class="btn btn-danger">Clear Blacklist</button>
         <button id="blacklist-close" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search Subreddit Modal -->
+  <div id="search-modal" class="modal hidden">
+    <div class="modal-content modal-wide">
+      <h3>Search Subreddit</h3>
+      <div class="form-group">
+        <label for="search-query">Search for wallpapers</label>
+        <input type="text" id="search-query" placeholder="sunset, mountains, ocean...">
+        <small class="form-hint">Search within current subreddit(s)</small>
+      </div>
+      <div class="modal-buttons">
+        <button id="search-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="search-submit" class="btn btn-primary">Search</button>
+      </div>
+      <div id="search-results" class="search-results-grid"></div>
+    </div>
+  </div>
+
+  <!-- Color Filter Modal -->
+  <div id="color-filter-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Filter by Color</h3>
+      <p class="color-filter-desc">Select a color to filter wallpapers by their dominant color</p>
+      <div class="color-grid">
+        <button class="color-btn" data-color="red" style="background: #e74c3c;" title="Red"></button>
+        <button class="color-btn" data-color="orange" style="background: #e67e22;" title="Orange"></button>
+        <button class="color-btn" data-color="yellow" style="background: #f1c40f;" title="Yellow"></button>
+        <button class="color-btn" data-color="green" style="background: #27ae60;" title="Green"></button>
+        <button class="color-btn" data-color="teal" style="background: #1abc9c;" title="Teal"></button>
+        <button class="color-btn" data-color="blue" style="background: #3498db;" title="Blue"></button>
+        <button class="color-btn" data-color="purple" style="background: #9b59b6;" title="Purple"></button>
+        <button class="color-btn" data-color="pink" style="background: #e91e63;" title="Pink"></button>
+        <button class="color-btn" data-color="brown" style="background: #795548;" title="Brown"></button>
+        <button class="color-btn" data-color="gray" style="background: #95a5a6;" title="Gray"></button>
+        <button class="color-btn" data-color="black" style="background: #2c3e50;" title="Dark"></button>
+        <button class="color-btn" data-color="white" style="background: #ecf0f1; border: 1px solid #bdc3c7;" title="Light"></button>
+      </div>
+      <div id="current-color-filter" class="current-filter hidden">
+        <span>Active filter: <strong id="active-color-name"></strong></span>
+        <button id="clear-color-filter" class="btn btn-small btn-danger">Clear</button>
+      </div>
+      <div class="modal-buttons">
+        <button id="color-filter-close" class="btn btn-secondary">Close</button>
       </div>
     </div>
   </div>
