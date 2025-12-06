@@ -80,13 +80,6 @@ let historyIndex = -1;
     const clockFormat = localStorage.getItem('last_clock_format') || '24h';
     const dateFormat = localStorage.getItem('last_date_format') || 'full';
     updateClockImmediate(clockFormat, dateFormat);
-    
-    // Restore shortcuts
-    const cachedShortcuts = localStorage.getItem('last_shortcuts_html');
-    if (cachedShortcuts) {
-      const container = document.getElementById('shortcuts');
-      if (container) container.innerHTML = cachedShortcuts;
-    }
   } catch (e) {
     // Ignore errors
   }
@@ -144,6 +137,13 @@ function updateClockImmediate(clockFormat, dateFormat) {
 
 // Initialize the new tab
 document.addEventListener('DOMContentLoaded', async () => {
+  // Ensure all modals are properly initialized as hidden
+  document.querySelectorAll('.modal').forEach(modal => {
+    if (!modal.classList.contains('hidden')) {
+      modal.classList.add('hidden');
+    }
+  });
+  
   updateClock();
   setInterval(updateClock, 1000);
   
@@ -338,9 +338,6 @@ async function loadShortcuts() {
     // Add the "Add Shortcut" button
     const addButton = createAddShortcutButton();
     shortcutsContainer.appendChild(addButton);
-    
-    // Cache shortcuts HTML for instant restore on next load
-    localStorage.setItem('last_shortcuts_html', shortcutsContainer.innerHTML);
   } catch (error) {
     console.error('Error loading shortcuts:', error);
   }

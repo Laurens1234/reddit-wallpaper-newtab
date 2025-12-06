@@ -319,12 +319,14 @@ body {
   justify-content: center;
   z-index: 200;
   backdrop-filter: blur(5px);
+  opacity: 1;
   transition: opacity 0.2s ease;
 }
 
 .modal.hidden {
   opacity: 0;
   pointer-events: none;
+  visibility: hidden;
 }
 
 .modal-content {
