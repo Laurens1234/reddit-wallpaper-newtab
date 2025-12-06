@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
   zenMode: false,
   // Clock settings
   clockFormat: '24h',
-  dateFormat: 'long', // Changed from 'full' to 'long' (more commonly used format)
+  dateFormat: 'full',
   // Weather settings
   showWeather: false,
   weatherLocation: '',
@@ -52,98 +52,8 @@ let currentWallpaperData = null;
 let wallpaperHistory = [];
 let historyIndex = -1;
 
-// Only restore previous state if this is a "soft refresh" (R key or refresh button)
-// New tabs and Ctrl+R should show loading screen normally
-(function restorePreviousStateImmediately() {
-  try {
-    const isSoftRefresh = sessionStorage.getItem('soft_refresh') === 'true';
-    sessionStorage.removeItem('soft_refresh'); // Clear the flag
-    
-    if (!isSoftRefresh) {
-      // Normal new tab or hard refresh - just restore clock format for consistency
-      const clockFormat = localStorage.getItem('last_clock_format') || '24h';
-      const dateFormat = localStorage.getItem('last_date_format') || 'full';
-      updateClockImmediate(clockFormat, dateFormat);
-      return;
-    }
-    
-    // Soft refresh - restore everything instantly
-    const url = localStorage.getItem('last_wallpaper_url');
-    if (url) {
-      const bg = document.getElementById('background');
-      if (bg) bg.src = url;
-      const loading = document.getElementById('loading');
-      if (loading) loading.classList.add('hidden');
-    }
-    
-    // Restore clock
-    const clockFormat = localStorage.getItem('last_clock_format') || '24h';
-    const dateFormat = localStorage.getItem('last_date_format') || 'full';
-    updateClockImmediate(clockFormat, dateFormat);
-  } catch (e) {
-    // Ignore errors
-  }
-})();
-
-// Immediate clock update (synchronous, no async settings fetch)
-function updateClockImmediate(clockFormat, dateFormat) {
-  const now = new Date();
-  const format = clockFormat || '24h';
-  
-  const is12Hour = format.startsWith('12h');
-  const showSeconds = format.includes('seconds');
-  
-  let hours = now.getHours();
-  let ampm = '';
-  
-  if (is12Hour) {
-    ampm = hours >= 12 ? ' PM' : ' AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-  }
-  
-  const hoursStr = hours.toString().padStart(2, '0');
-  const minutes = now.getMinutes().toString().padStart(2, '0');
-  const seconds = now.getSeconds().toString().padStart(2, '0');
-  
-  let timeStr = `${hoursStr}:${minutes}`;
-  if (showSeconds) {
-    timeStr += `:${seconds}`;
-  }
-  timeStr += ampm;
-  
-  const clock = document.getElementById('clock');
-  if (clock) clock.textContent = timeStr;
-  
-  let dateStr;
-  switch (dateFormat) {
-    case 'short':
-      dateStr = now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-      break;
-    case 'numeric':
-      dateStr = now.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
-      break;
-    case 'iso':
-      dateStr = now.toISOString().split('T')[0];
-      break;
-    case 'long':
-    default:
-      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-      break;
-  }
-  const date = document.getElementById('date');
-  if (date) date.textContent = dateStr;
-}
-
 // Initialize the new tab
 document.addEventListener('DOMContentLoaded', async () => {
-  // Ensure all modals are properly initialized as hidden
-  document.querySelectorAll('.modal').forEach(modal => {
-    if (!modal.classList.contains('hidden')) {
-      modal.classList.add('hidden');
-    }
-  });
-  
   updateClock();
   setInterval(updateClock, 1000);
   
@@ -169,7 +79,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('weather-widget')?.addEventListener('click', openWeatherWebsite);
 
   document.getElementById('refresh-btn').addEventListener('click', () => {
-    sessionStorage.setItem('soft_refresh', 'true');
     location.reload();
   });
   
@@ -201,7 +110,6 @@ function handleKeyboard(e) {
   
   switch(e.key.toLowerCase()) {
     case 'r':
-      sessionStorage.setItem('soft_refresh', 'true');
       location.reload();
       break;
     case 'd':
@@ -224,11 +132,6 @@ async function updateClock() {
   const settings = await getWallpaperSettings();
   const now = new Date();
   const format = settings.clockFormat || '24h';
-  const dateFormat = settings.dateFormat || 'long';
-  
-  // Cache formats for instant restore on next load
-  localStorage.setItem('last_clock_format', format);
-  localStorage.setItem('last_date_format', dateFormat);
   
   // Determine if 12-hour format
   const is12Hour = format.startsWith('12h');
@@ -257,19 +160,19 @@ async function updateClock() {
   
   // Format date based on setting
   let dateStr;
-  switch (dateFormat) {
+  switch (settings.dateFormat) {
     case 'short':
-      dateStr = now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      dateStr = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       break;
     case 'numeric':
       dateStr = now.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
       break;
-    case 'iso':
-      dateStr = now.toISOString().split('T')[0];
+    case 'weekday':
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'long' });
       break;
-    case 'long':
+    case 'full':
     default:
-      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+      dateStr = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       break;
   }
   document.getElementById('date').textContent = dateStr;
@@ -673,9 +576,6 @@ function setupSettingsModal() {
       closeSettingsModal();
     }
   });
-  
-  // Detect location button
-  document.getElementById('detect-location-btn')?.addEventListener('click', detectLocation);
   
   // Add scheduled subreddit button
   document.getElementById('add-scheduled-btn')?.addEventListener('click', addScheduledSubredditRow);
@@ -1648,9 +1548,6 @@ function setWallpaperFast(wallpaper) {
     backgroundVideo.src = videoUrl;
     backgroundVideo.play();
     
-    // Save this URL as the last wallpaper for next load (use localStorage for instant sync access)
-    localStorage.setItem('last_wallpaper_url', wallpaper.thumbnail || wallpaper.url);
-    
     currentWallpaperData = wallpaper;
     updateWallpaperInfo(wallpaper);
     updateFavoriteButton();
@@ -1668,9 +1565,6 @@ function setWallpaperFast(wallpaper) {
   testImg.onload = () => {
     // Image loaded successfully, apply it directly
     background.src = wallpaper.url;
-    
-    // Save this URL as the last wallpaper for next load (use localStorage for instant sync access)
-    localStorage.setItem('last_wallpaper_url', wallpaper.url);
     
     currentWallpaperData = wallpaper;
     updateWallpaperInfo(wallpaper);
@@ -1991,6 +1885,7 @@ function updateWallpaperInfo(wallpaper) {
 // Setup favorites modal events
 function setupFavoritesModal() {
   document.getElementById('view-favorites-btn').addEventListener('click', () => {
+    closeSettingsModal();
     openFavoritesModal();
   });
   
@@ -2004,6 +1899,7 @@ function setupFavoritesModal() {
   
   // Cached wallpapers modal
   document.getElementById('view-cached-btn').addEventListener('click', () => {
+    closeSettingsModal();
     openCachedModal();
   });
   
@@ -2029,6 +1925,7 @@ function setupFavoritesModal() {
   
   // Blacklist modal
   document.getElementById('view-blacklist-btn').addEventListener('click', () => {
+    closeSettingsModal();
     openBlacklistModal();
   });
   
@@ -2168,67 +2065,6 @@ async function removeFromBlacklist(url) {
 }
 
 // ==================== WEATHER ====================
-
-// Detect user's location using browser geolocation API
-async function detectLocation() {
-  const btn = document.getElementById('detect-location-btn');
-  const input = document.getElementById('settings-weather-location');
-  
-  if (!navigator.geolocation) {
-    showToast('Geolocation is not supported by your browser');
-    return;
-  }
-  
-  btn.disabled = true;
-  btn.textContent = '...';
-  
-  try {
-    const position = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        timeout: 10000,
-        enableHighAccuracy: false
-      });
-    });
-    
-    const { latitude, longitude } = position.coords;
-    
-    // Use Nominatim reverse geocoding (OpenStreetMap)
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`,
-      {
-        headers: {
-          'User-Agent': 'Reddit Wallpaper Extension'
-        }
-      }
-    );
-    
-    if (!response.ok) throw new Error('Reverse geocoding failed');
-    
-    const data = await response.json();
-    if (data.address) {
-      // Try to get the most appropriate city name
-      const city = data.address.city || data.address.town || data.address.village || data.address.municipality;
-      if (city) {
-        input.value = city;
-        showToast(`Location detected: ${city}`);
-      } else {
-        throw new Error('Could not determine city name');
-      }
-    } else {
-      throw new Error('Could not determine city name');
-    }
-  } catch (error) {
-    console.error('Location detection failed:', error);
-    if (error.code === 1) {
-      showToast('Location access denied. Please enable location permissions.');
-    } else {
-      showToast('Failed to detect location. Please enter manually.');
-    }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '📍';
-  }
-}
 
 async function updateWeather() {
   const settings = await getWallpaperSettings();

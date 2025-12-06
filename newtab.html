@@ -73,7 +73,7 @@
           <input type="checkbox" id="settings-zen-mode">
           <span>🧘 Zen Mode</span>
         </label>
-        <small class="form-hint">UI elements only appear on mouse movement</small>
+        <small class="form-hint">Hide all UI elements until you move your mouse</small>
       </div>
       
       <div class="form-group">
@@ -184,11 +184,8 @@
       </div>
       <div class="form-group">
         <label for="settings-weather-location">Location (City name)</label>
-        <div style="display: flex; gap: 8px;">
-          <input type="text" id="settings-weather-location" placeholder="New York, London, Tokyo..." style="flex: 1;">
-          <button type="button" id="detect-location-btn" class="btn btn-secondary" title="Detect my location">📍</button>
-        </div>
-        <small class="form-hint">Enter a city name or detect your location automatically</small>
+        <input type="text" id="settings-weather-location" placeholder="New York, London, Tokyo...">
+        <small class="form-hint">Enter a city name for weather data</small>
       </div>
       <div class="form-group">
         <label for="settings-weather-units">Temperature units</label>
@@ -238,11 +235,12 @@
         <button id="view-cached-btn" class="btn btn-secondary">Cached</button>
         <button id="view-blacklist-btn" class="btn btn-secondary">Blacklist</button>
       </div>
-    </div>
-    
-    <div class="modal-buttons-sticky">
-      <button id="settings-cancel" class="btn btn-secondary">Cancel</button>
-      <button id="settings-save" class="btn btn-primary">Save & Refresh</button>
+      </div>
+      
+      <div class="modal-buttons modal-buttons-sticky">
+        <button id="settings-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="settings-save" class="btn btn-primary">Save & Refresh</button>
+      </div>
     </div>
   </div>
 
