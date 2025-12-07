@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
   zenMode: false,
   // Clock settings
   clockFormat: '24h',
-  dateFormat: 'full',
+  dateFormat: 'long',
   // Weather settings
   showWeather: false,
   weatherLocation: '',
@@ -1944,6 +1944,9 @@ function setupFavoritesModal() {
       closeBlacklistModal();
     }
   });
+  
+  // Detect location button
+  document.getElementById('detect-location-btn')?.addEventListener('click', detectLocation);
 }
 
 // View cached wallpapers modal
@@ -2133,6 +2136,61 @@ async function openWeatherWebsite() {
     const query = encodeURIComponent(settings.weatherLocation + ' weather');
     window.open(`https://www.google.com/search?q=${query}`, '_blank');
   }
+}
+
+async function detectLocation() {
+  const locationInput = document.getElementById('settings-weather-location');
+  const detectBtn = document.getElementById('detect-location-btn');
+  
+  if (!navigator.geolocation) {
+    showToast('Geolocation is not supported by your browser');
+    return;
+  }
+  
+  detectBtn.disabled = true;
+  detectBtn.textContent = '⏳';
+  
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      try {
+        const { latitude, longitude } = position.coords;
+        
+        // Use reverse geocoding API (nominatim style)
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+          {
+            headers: {
+              'User-Agent': 'WallpaperExtension/1.0'
+            }
+          }
+        );
+        
+        if (!response.ok) throw new Error('Reverse geocoding failed');
+        
+        const data = await response.json();
+        const address = data.address;
+        
+        // Get the most appropriate city name
+        const cityName = address.city || address.town || address.village || 
+                        address.municipality || address.county || 'Unknown';
+        
+        locationInput.value = cityName;
+        showToast(`Location detected: ${cityName}`);
+      } catch (error) {
+        console.error('Location detection error:', error);
+        showToast('Failed to detect location. Please enter manually.');
+      } finally {
+        detectBtn.disabled = false;
+        detectBtn.textContent = '📍';
+      }
+    },
+    (error) => {
+      console.error('Geolocation error:', error);
+      showToast('Location access denied. Please enter manually.');
+      detectBtn.disabled = false;
+      detectBtn.textContent = '📍';
+    }
+  );
 }
 
 function getWeatherInfo(code) {
