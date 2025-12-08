@@ -13,11 +13,14 @@ const DEFAULT_SETTINGS = {
   zenMode: false,
   // Clock settings
   clockFormat: '24h',
-  dateFormat: 'full',
+  dateFormat: 'long',
   // Weather settings
   showWeather: false,
   weatherLocation: '',
   weatherUnits: 'celsius',
+  // Timer settings
+  showTimer: false,
+  timerPosition: 'top-left',
   // Scheduled subreddits
   useSchedule: false,
   schedule: {
@@ -74,6 +77,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateWeather();
     setInterval(updateWeather, 30 * 60 * 1000); // Update every 30 min
   }
+  
+  // Initialize timer
+  await initTimer();
   
   // Weather widget click - open weather website
   document.getElementById('weather-widget')?.addEventListener('click', openWeatherWebsite);
@@ -835,6 +841,10 @@ async function openSettingsModal() {
   document.getElementById('settings-weather-location').value = settings.weatherLocation || '';
   document.getElementById('settings-weather-units').value = settings.weatherUnits || 'celsius';
   
+  // Load timer settings
+  document.getElementById('settings-timer-enabled').checked = settings.showTimer || false;
+  document.getElementById('settings-timer-position').value = settings.timerPosition || 'top-left';
+  
   // Load favorites only setting
   document.getElementById('settings-favorites-only').checked = settings.favoritesOnly || false;
   
@@ -955,6 +965,10 @@ async function saveSettings() {
   const weatherLocation = document.getElementById('settings-weather-location').value.trim();
   const weatherUnits = document.getElementById('settings-weather-units').value;
   
+  // Timer settings
+  const showTimer = document.getElementById('settings-timer-enabled').checked;
+  const timerPosition = document.getElementById('settings-timer-position').value;
+  
   // Favorites only setting
   const favoritesOnly = document.getElementById('settings-favorites-only').checked;
   
@@ -970,6 +984,7 @@ async function saveSettings() {
     allowImages, allowGifs, allowVideos, hoverOnly,
     clockFormat, dateFormat,
     showWeather, weatherLocation, weatherUnits,
+    showTimer, timerPosition,
     favoritesOnly,
     scheduledEnabled, scheduledSubreddits,
     zenMode
@@ -988,6 +1003,9 @@ async function saveSettings() {
   } else {
     weatherWidget?.classList.add('hidden');
   }
+  
+  // Update timer widget visibility
+  await initTimer();
   
   // Save each subreddit to recents
   for (const sub of subreddits) {
@@ -1944,6 +1962,9 @@ function setupFavoritesModal() {
       closeBlacklistModal();
     }
   });
+  
+  // Detect location button
+  document.getElementById('detect-location-btn')?.addEventListener('click', detectLocation);
 }
 
 // View cached wallpapers modal
@@ -2133,6 +2154,61 @@ async function openWeatherWebsite() {
     const query = encodeURIComponent(settings.weatherLocation + ' weather');
     window.open(`https://www.google.com/search?q=${query}`, '_blank');
   }
+}
+
+async function detectLocation() {
+  const locationInput = document.getElementById('settings-weather-location');
+  const detectBtn = document.getElementById('detect-location-btn');
+  
+  if (!navigator.geolocation) {
+    showToast('Geolocation is not supported by your browser');
+    return;
+  }
+  
+  detectBtn.disabled = true;
+  detectBtn.textContent = '⏳';
+  
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      try {
+        const { latitude, longitude } = position.coords;
+        
+        // Use reverse geocoding API (nominatim style)
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+          {
+            headers: {
+              'User-Agent': 'WallpaperExtension/1.0'
+            }
+          }
+        );
+        
+        if (!response.ok) throw new Error('Reverse geocoding failed');
+        
+        const data = await response.json();
+        const address = data.address;
+        
+        // Get the most appropriate city name
+        const cityName = address.city || address.town || address.village || 
+                        address.municipality || address.county || 'Unknown';
+        
+        locationInput.value = cityName;
+        showToast(`Location detected: ${cityName}`);
+      } catch (error) {
+        console.error('Location detection error:', error);
+        showToast('Failed to detect location. Please enter manually.');
+      } finally {
+        detectBtn.disabled = false;
+        detectBtn.textContent = '📍';
+      }
+    },
+    (error) => {
+      console.error('Geolocation error:', error);
+      showToast('Location access denied. Please enter manually.');
+      detectBtn.disabled = false;
+      detectBtn.textContent = '📍';
+    }
+  );
 }
 
 function getWeatherInfo(code) {
@@ -2474,4 +2550,120 @@ async function filterByColor(wallpapers, colorFilter) {
   }
   
   return analyzed.length > 0 ? analyzed : wallpapers;
+}
+
+// Timer functionality
+let timerInterval = null;
+let timerSeconds = 0;
+let timerRunning = false;
+
+function updateTimerDisplay() {
+  const minutes = Math.floor(timerSeconds / 60);
+  const seconds = timerSeconds % 60;
+  const display = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  document.getElementById('timer-display').textContent = display;
+  
+  // Timer finished
+  if (timerSeconds <= 0 && timerRunning) {
+    pauseTimer();
+    showToast('Timer finished!');
+    // Optional: play a sound or notification
+  }
+}
+
+function startTimer() {
+  if (timerRunning) return;
+  if (timerSeconds <= 0) {
+    showToast('Set a timer first!');
+    return;
+  }
+  
+  timerRunning = true;
+  document.getElementById('timer-toggle').textContent = '⏸';
+  document.getElementById('timer-toggle').title = 'Pause timer';
+  
+  timerInterval = setInterval(() => {
+    timerSeconds--;
+    updateTimerDisplay();
+  }, 1000);
+}
+
+function pauseTimer() {
+  timerRunning = false;
+  document.getElementById('timer-toggle').textContent = '▶';
+  document.getElementById('timer-toggle').title = 'Start timer';
+  
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function toggleTimer() {
+  if (timerRunning) {
+    pauseTimer();
+  } else {
+    startTimer();
+  }
+}
+
+function resetTimer() {
+  pauseTimer();
+  timerSeconds = 0;
+  updateTimerDisplay();
+}
+
+function setTimer() {
+  const input = prompt('Set timer (format: MM:SS or just minutes):', '05:00');
+  if (!input) return;
+  
+  let minutes = 0;
+  let seconds = 0;
+  
+  if (input.includes(':')) {
+    const parts = input.split(':');
+    minutes = parseInt(parts[0]) || 0;
+    seconds = parseInt(parts[1]) || 0;
+  } else {
+    minutes = parseInt(input) || 0;
+  }
+  
+  pauseTimer();
+  timerSeconds = minutes * 60 + seconds;
+  updateTimerDisplay();
+}
+
+async function initTimer() {
+  const settings = await getWallpaperSettings();
+  const timerWidget = document.getElementById('timer-widget');
+  
+  if (settings.showTimer) {
+    timerWidget.classList.remove('hidden');
+    // Remove all position classes first
+    timerWidget.classList.remove('top-left', 'top-right', 'bottom-left', 'bottom-right');
+    timerWidget.classList.add(settings.timerPosition || 'top-left');
+  } else {
+    timerWidget.classList.add('hidden');
+  }
+  
+  // Event listeners (only add once)
+  const toggleBtn = document.getElementById('timer-toggle');
+  if (toggleBtn && !toggleBtn.dataset.initialized) {
+    toggleBtn.addEventListener('click', toggleTimer);
+    toggleBtn.dataset.initialized = 'true';
+  }
+  
+  const resetBtn = document.getElementById('timer-reset');
+  if (resetBtn && !resetBtn.dataset.initialized) {
+    resetBtn.addEventListener('click', resetTimer);
+    resetBtn.dataset.initialized = 'true';
+  }
+  
+  const setBtn = document.getElementById('timer-set');
+  if (setBtn && !setBtn.dataset.initialized) {
+    setBtn.addEventListener('click', setTimer);
+    setBtn.dataset.initialized = 'true';
+  }
+  
+  updateTimerDisplay();
 }
