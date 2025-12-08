@@ -1024,6 +1024,10 @@ body.light-wallpaper #overlay {
   letter-spacing: 2px;
 }
 
+#timer-display.hidden {
+  display: none;
+}
+
 #timer-controls {
   display: flex;
   gap: 8px;
@@ -1038,6 +1042,10 @@ body.light-wallpaper #overlay {
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s ease;
+}
+
+#timer-controls button.hidden {
+  display: none;
 }
 
 #timer-controls button:hover {
@@ -1273,6 +1281,63 @@ body.light-wallpaper #overlay {
 .zen-mode-toggle span {
   font-size: 15px;
   font-weight: 500;
+}
+
+/* Local Wallpapers Grid */
+.local-wallpapers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 15px;
+  margin: 20px 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.local-wallpaper-item {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.local-wallpaper-item:hover {
+  transform: scale(1.05);
+}
+
+.local-wallpaper-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.local-wallpaper-delete {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: rgba(231, 76, 60, 0.9);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.local-wallpaper-item:hover .local-wallpaper-delete {
+  opacity: 1;
+}
+
+.local-wallpaper-delete:hover {
+  background: rgba(192, 57, 43, 0.9);
 }
 
 .zen-mode-toggle .form-hint {

@@ -1,6 +1,6 @@
 // Default wallpaper settings
 const DEFAULT_SETTINGS = {
-  subreddit: 'EarthPorn',
+  subreddit: 'EarthPorn, wallpaper, wallpapers',
   sort: 'hot',
   time: 'week',
   minResolution: 0,
@@ -11,6 +11,9 @@ const DEFAULT_SETTINGS = {
   allowVideos: true,
   favoritesOnly: false,
   zenMode: false,
+  // Local wallpapers
+  useLocalWallpapers: false,
+  localWallpapers: [],
   // Clock settings
   clockFormat: '24h',
   dateFormat: 'long',
@@ -46,6 +49,7 @@ const RECENT_SUBREDDITS_KEY = 'recent_subreddits';
 const FAVORITES_KEY = 'favorite_wallpapers';
 const BLACKLIST_KEY = 'blacklisted_wallpapers';
 const WALLPAPER_HISTORY_KEY = 'wallpaper_history';
+const LOCAL_WALLPAPERS_KEY = 'local_wallpapers';
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 const MAX_RECENT_SUBREDDITS = 5;
 const MAX_HISTORY = 50;
@@ -296,21 +300,27 @@ function createShortcutElement(site, index) {
   const iconDiv = document.createElement('div');
   iconDiv.className = 'shortcut-icon';
   
-  // Try to get favicon
-  const domain = new URL(site.url).hostname;
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+  // Start with fallback (first letter)
+  iconDiv.classList.add('fallback');
+  iconDiv.textContent = site.title.charAt(0).toUpperCase();
   
-  const img = document.createElement('img');
-  img.src = faviconUrl;
-  img.alt = site.title;
-  img.onerror = () => {
-    // Fallback to first letter
-    iconDiv.classList.add('fallback');
-    iconDiv.textContent = site.title.charAt(0);
-    img.remove();
+  // Try to load favicon - create image but don't add to DOM until loaded
+  const domain = new URL(site.url).hostname;
+  const img = new Image();
+  
+  img.onload = () => {
+    // Favicon loaded successfully, replace fallback
+    iconDiv.classList.remove('fallback');
+    iconDiv.textContent = '';
+    img.className = 'shortcut-favicon';
+    iconDiv.appendChild(img);
   };
   
-  iconDiv.appendChild(img);
+  // Silently ignore errors - fallback is already shown
+  img.onerror = () => {};
+  
+  // Set src last to start loading
+  img.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
   
   const titleSpan = document.createElement('span');
   titleSpan.className = 'shortcut-title';
@@ -591,6 +601,9 @@ function setupSettingsModal() {
   
   // Setup color filter modal
   setupColorFilterModal();
+  
+  // Setup local wallpapers modal
+  setupLocalWallpapersModal();
 }
 
 // Setup search modal event listeners
@@ -636,6 +649,34 @@ function setupColorFilterModal() {
       const color = btn.dataset.color;
       setColorFilter(color);
     });
+  });
+}
+
+// Setup local wallpapers modal event listeners
+function setupLocalWallpapersModal() {
+  const localModal = document.getElementById('local-wallpapers-modal');
+  const fileInput = document.getElementById('local-wallpaper-input');
+  
+  document.getElementById('manage-local-btn')?.addEventListener('click', openLocalWallpapersModal);
+  document.getElementById('local-wallpapers-close')?.addEventListener('click', closeLocalWallpapersModal);
+  
+  document.getElementById('upload-local-btn')?.addEventListener('click', () => {
+    fileInput?.click();
+  });
+  
+  fileInput?.addEventListener('change', (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      uploadLocalWallpapers(files);
+    }
+    // Reset file input so same file can be selected again
+    fileInput.value = '';
+  });
+  
+  localModal?.addEventListener('click', (e) => {
+    if (e.target.id === 'local-wallpapers-modal') {
+      closeLocalWallpapersModal();
+    }
   });
 }
 
@@ -848,6 +889,9 @@ async function openSettingsModal() {
   // Load favorites only setting
   document.getElementById('settings-favorites-only').checked = settings.favoritesOnly || false;
   
+  // Load local wallpapers setting
+  document.getElementById('settings-local-wallpapers').checked = settings.useLocalWallpapers || false;
+  
   // Load scheduled subreddits
   document.getElementById('settings-scheduled-enabled').checked = settings.scheduledEnabled || false;
   renderScheduledSubreddits(settings.scheduledSubreddits || []);
@@ -864,6 +908,165 @@ async function openSettingsModal() {
 
 function closeSettingsModal() {
   document.getElementById('settings-modal').classList.add('hidden');
+}
+
+// Local Wallpapers functions
+async function openLocalWallpapersModal() {
+  document.getElementById('local-wallpapers-modal')?.classList.remove('hidden');
+  await renderLocalWallpapers();
+}
+
+function closeLocalWallpapersModal() {
+  document.getElementById('local-wallpapers-modal').classList.add('hidden');
+}
+
+async function renderLocalWallpapers() {
+  const grid = document.getElementById('local-wallpapers-grid');
+  if (!grid) return;
+  
+  const result = await chrome.storage.local.get([LOCAL_WALLPAPERS_KEY]);
+  const localWallpapers = result[LOCAL_WALLPAPERS_KEY] || [];
+  
+  grid.innerHTML = '';
+  
+  if (localWallpapers.length === 0) {
+    grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: rgba(255,255,255,0.6); padding: 40px;">No local wallpapers yet. Upload some images to get started!</p>';
+    return;
+  }
+  
+  localWallpapers.forEach((wallpaper, index) => {
+    const item = document.createElement('div');
+    item.className = 'local-wallpaper-item';
+    
+    const img = document.createElement('img');
+    img.src = wallpaper.dataUrl;
+    img.alt = wallpaper.name || 'Local wallpaper';
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'local-wallpaper-delete';
+    deleteBtn.innerHTML = '✕';
+    deleteBtn.title = 'Delete';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteLocalWallpaper(index);
+    });
+    
+    item.appendChild(img);
+    item.appendChild(deleteBtn);
+    
+    // Click to set as current wallpaper
+    item.addEventListener('click', () => {
+      setLocalWallpaper(wallpaper);
+      closeLocalWallpapersModal();
+    });
+    
+    grid.appendChild(item);
+  });
+}
+
+async function uploadLocalWallpapers(files) {
+  if (!files || files.length === 0) return;
+  
+  // Convert FileList to Array
+  const fileArray = Array.from(files);
+  
+  const result = await chrome.storage.local.get([LOCAL_WALLPAPERS_KEY]);
+  const localWallpapers = result[LOCAL_WALLPAPERS_KEY] || [];
+  
+  const maxSize = 10 * 1024 * 1024; // 10MB per file
+  let addedCount = 0;
+  
+  for (let i = 0; i < fileArray.length; i++) {
+    const file = fileArray[i];
+    
+    if (file.size > maxSize) {
+      showToast(`Skipped ${file.name}: File too large (max 10MB)`);
+      continue;
+    }
+    
+    if (!file.type.startsWith('image/')) {
+      showToast(`Skipped ${file.name}: Not an image file`);
+      continue;
+    }
+    
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      localWallpapers.push({
+        name: file.name,
+        dataUrl: dataUrl,
+        addedAt: Date.now()
+      });
+      addedCount++;
+    } catch (err) {
+      showToast(`Failed to upload ${file.name}`);
+      console.error('Upload error:', err);
+    }
+  }
+  
+  if (addedCount > 0) {
+    await chrome.storage.local.set({ [LOCAL_WALLPAPERS_KEY]: localWallpapers });
+    showToast(`Added ${addedCount} wallpaper${addedCount > 1 ? 's' : ''}`);
+    await renderLocalWallpapers();
+  }
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function deleteLocalWallpaper(index) {
+  const result = await chrome.storage.local.get([LOCAL_WALLPAPERS_KEY]);
+  const localWallpapers = result[LOCAL_WALLPAPERS_KEY] || [];
+  
+  if (index >= 0 && index < localWallpapers.length) {
+    localWallpapers.splice(index, 1);
+    await chrome.storage.local.set({ [LOCAL_WALLPAPERS_KEY]: localWallpapers });
+    await renderLocalWallpapers();
+    showToast('Wallpaper deleted');
+  }
+}
+
+function setLocalWallpaper(wallpaper) {
+  const wallpaperEl = document.getElementById('background');
+  if (!wallpaperEl) return;
+  
+  wallpaperEl.src = wallpaper.dataUrl;
+  
+  // Update info bar
+  const infoTitle = document.getElementById('info-title');
+  const infoSubreddit = document.getElementById('info-subreddit');
+  
+  if (infoTitle) infoTitle.textContent = wallpaper.name || 'Local Wallpaper';
+  if (infoSubreddit) infoSubreddit.textContent = 'Local Upload';
+  
+  // Hide favorite/download buttons for local wallpapers
+  const favoriteBtn = document.getElementById('favorite-btn');
+  const downloadBtn = document.getElementById('download-btn');
+  const viewOriginalBtn = document.getElementById('view-original-btn');
+  
+  favoriteBtn?.classList.add('hidden');
+  downloadBtn?.classList.add('hidden');
+  viewOriginalBtn?.classList.add('hidden');
+  
+  showToast('Local wallpaper applied');
+}
+
+async function getRandomLocalWallpaper() {
+  const result = await chrome.storage.local.get([LOCAL_WALLPAPERS_KEY]);
+  const localWallpapers = result[LOCAL_WALLPAPERS_KEY] || [];
+  
+  if (localWallpapers.length === 0) {
+    showToast('No local wallpapers available');
+    return null;
+  }
+  
+  const randomIndex = Math.floor(Math.random() * localWallpapers.length);
+  return localWallpapers[randomIndex];
 }
 
 // Apply hover-only visibility settings
@@ -972,6 +1175,9 @@ async function saveSettings() {
   // Favorites only setting
   const favoritesOnly = document.getElementById('settings-favorites-only').checked;
   
+  // Local wallpapers setting
+  const useLocalWallpapers = document.getElementById('settings-local-wallpapers').checked;
+  
   // Scheduled subreddits
   const scheduledEnabled = document.getElementById('settings-scheduled-enabled').checked;
   const scheduledSubreddits = getScheduledSubredditsFromUI();
@@ -986,6 +1192,7 @@ async function saveSettings() {
     showWeather, weatherLocation, weatherUnits,
     showTimer, timerPosition,
     favoritesOnly,
+    useLocalWallpapers,
     scheduledEnabled, scheduledSubreddits,
     zenMode
   };
@@ -1037,6 +1244,19 @@ async function loadWallpaper() {
   try {
     const settings = await getWallpaperSettings();
     
+    // Check if using local wallpapers mode
+    if (settings.useLocalWallpapers) {
+      const localWallpaper = await getRandomLocalWallpaper();
+      if (localWallpaper) {
+        setLocalWallpaper(localWallpaper);
+        loading.classList.add('hidden');
+        return;
+      } else {
+        showToast('No local wallpapers available. Upload some images in settings!');
+        // Fall back to Reddit wallpapers
+      }
+    }
+    
     // Check if favorites only mode
     if (settings.favoritesOnly) {
       const favResult = await chrome.storage.local.get([FAVORITES_KEY]);
@@ -1056,16 +1276,9 @@ async function loadWallpaper() {
     const result = await chrome.storage.local.get([cacheKey]);
     const cached = result[cacheKey];
     
-    console.log('Cache key:', cacheKey);
-    console.log('Cached data:', cached);
-    console.log('Has wallpapers array?', cached?.wallpapers);
-    console.log('Wallpapers length:', cached?.wallpapers?.length);
-    
     // If we have cached wallpapers, pick a random one immediately
     if (cached && cached.wallpapers && cached.wallpapers.length > 0) {
       let wallpapers = cached.wallpapers;
-      
-      console.log(`Loaded ${wallpapers.length} wallpapers from cache`);
       
       // Apply color filter if set
       if (settings.colorFilter && settings.colorFilter !== 'none') {
@@ -1094,7 +1307,6 @@ async function loadWallpaper() {
       }
     } else {
       // No cache, need to fetch
-      console.log('No cached wallpapers found, fetching new ones');
       await getNewWallpaper();
     }
   } catch (error) {
@@ -1179,40 +1391,26 @@ function getResolution(post) {
 
 // Fetch wallpapers from Reddit
 async function fetchWallpapers() {
-  console.log('fetchWallpapers called');
   try {
     const settings = await getWallpaperSettings();
-    console.log('fetchWallpapers settings:', settings);
     
     // Use scheduled subreddit if enabled
     const subredditSource = getScheduledSubreddit(settings);
-    console.log('Subreddit source:', subredditSource);
     const subreddits = parseSubreddits(subredditSource);
-    console.log('Parsed subreddits:', subreddits);
     
     if (subreddits.length === 0) {
-      console.warn('No subreddits to fetch from!');
       return [];
     }
     
     // Check cache first (include settings in cache key)
     const cacheKey = `${CACHE_KEY}_${settings.subreddit}_${settings.sort}_${settings.time}_${settings.minResolution}_${settings.allowNsfw}`;
     const result = await chrome.storage.local.get([cacheKey]);
-    console.log('fetchWallpapers cache check - key:', cacheKey);
-    console.log('fetchWallpapers cache check - result:', result[cacheKey]);
     if (result[cacheKey]) {
       const cached = result[cacheKey];
-      const age = Date.now() - cached.timestamp;
-      console.log(`Cache age: ${Math.round(age / 1000)}s (max: ${CACHE_DURATION / 1000}s)`);
       // Only use cache if it has wallpapers AND is not expired
       if (cached.wallpapers && cached.wallpapers.length > 0 && Date.now() - cached.timestamp < CACHE_DURATION) {
-        console.log('Returning cached wallpapers:', cached.wallpapers.length);
         return cached.wallpapers;
-      } else {
-        console.log('Cache expired or empty, fetching fresh wallpapers');
       }
-    } else {
-      console.log('No cache found, fetching fresh wallpapers');
     }
     
     // Fetch from all subreddits
@@ -1221,7 +1419,6 @@ async function fetchWallpapers() {
     for (const subreddit of subreddits) {
       try {
         const redditUrl = buildRedditUrl(subreddit, settings);
-        console.log('Fetching from:', redditUrl);
         const response = await fetch(redditUrl, {
           headers: {
             'Accept': 'application/json'
@@ -1234,7 +1431,6 @@ async function fetchWallpapers() {
         }
         
         const data = await response.json();
-        console.log(`Fetched ${data.data.children.length} posts from r/${subreddit}`);
         const posts = data.data.children;
         
         // Filter for valid image posts
@@ -1322,21 +1518,14 @@ async function fetchWallpapers() {
           }))
           .filter(w => w.url); // Filter out any that couldn't get a URL;
         
-        console.log(`Found ${wallpapers.length} valid wallpapers from r/${subreddit}`);
         allWallpapers.push(...wallpapers);
       } catch (err) {
         console.warn(`Error fetching r/${subreddit}:`, err);
       }
     }
-    
-    console.log(`Total wallpapers before deduplication: ${allWallpapers.length}`);
-    
-    // Filter out blacklisted wallpapers
     const blacklistResult = await chrome.storage.local.get([BLACKLIST_KEY]);
     const blacklist = blacklistResult[BLACKLIST_KEY] || [];
     const filteredWallpapers = allWallpapers.filter(w => !blacklist.includes(w.url));
-    
-    console.log(`After blacklist filter: ${filteredWallpapers.length} wallpapers (removed ${allWallpapers.length - filteredWallpapers.length})`);
     
     // Remove duplicates by URL
     const uniqueWallpapers = [];
@@ -1351,8 +1540,6 @@ async function fetchWallpapers() {
     // Shuffle the wallpapers so we get variety from all subreddits
     const shuffled = uniqueWallpapers.sort(() => Math.random() - 0.5);
     
-    console.log(`Final wallpapers to cache: ${shuffled.length}`);
-    
     // Only cache if we have wallpapers
     if (shuffled.length > 0) {
       await chrome.storage.local.set({
@@ -1361,9 +1548,6 @@ async function fetchWallpapers() {
           timestamp: Date.now()
         }
       });
-      console.log('Cached successfully');
-    } else {
-      console.warn('Not caching empty result');
     }
     
     return shuffled;
@@ -1499,16 +1683,26 @@ async function getNewWallpaper(retryCount = 0) {
   const MAX_RETRIES = 5;
   const loading = document.getElementById('loading');
   
-  console.log('getNewWallpaper called, retryCount:', retryCount);
-  
   try {
     const settings = await getWallpaperSettings();
-    console.log('Settings:', settings);
     let wallpapers;
+    
+    // If using local wallpapers mode, use local wallpapers
+    if (settings.useLocalWallpapers) {
+      const localWallpaper = await getRandomLocalWallpaper();
+      if (localWallpaper) {
+        setLocalWallpaper(localWallpaper);
+        loading.classList.add('hidden');
+        return;
+      } else {
+        showToast('No local wallpapers available');
+        loading.classList.add('hidden');
+        return;
+      }
+    }
     
     // If favorites only mode is enabled, use favorites
     if (settings.favoritesOnly) {
-      console.log('Favorites only mode enabled');
       const favResult = await chrome.storage.local.get([FAVORITES_KEY]);
       wallpapers = favResult[FAVORITES_KEY] || [];
       
@@ -1516,24 +1710,17 @@ async function getNewWallpaper(retryCount = 0) {
         showToast('No favorites saved. Add some wallpapers to favorites first!');
         loading.classList.add('hidden');
         // Fall back to regular wallpapers
-        console.log('No favorites, falling back to regular wallpapers');
         wallpapers = await fetchWallpapers();
       }
     } else {
-      console.log('Fetching wallpapers from Reddit');
       wallpapers = await fetchWallpapers();
     }
-    
-    console.log('Wallpapers fetched:', wallpapers.length);
     
     if (wallpapers.length === 0) {
       showToast('No wallpapers found. Try a different subreddit or settings.');
       loading.classList.add('hidden');
-      console.error('No wallpapers found after filtering');
       return;
     }
-    
-    console.log(`Found ${wallpapers.length} valid wallpapers`);
     
     // Apply color filter if set
     if (settings.colorFilter && settings.colorFilter !== 'none') {
@@ -1650,7 +1837,11 @@ function setWallpaperFast(wallpaper) {
   
   testImg.onerror = () => {
     console.warn('Failed to load wallpaper:', wallpaper.url);
-    showToast('Image failed to load. Press R to try another.');
+    showToast('Image failed to load, trying another...');
+    // Automatically try to get a new wallpaper
+    setTimeout(() => {
+      getNewWallpaper();
+    }, 500);
   };
   
   testImg.src = wallpaper.url;
@@ -1705,6 +1896,11 @@ function setWallpaper(wallpaper) {
       resolve();
     };
     img.onerror = () => {
+      console.warn('Failed to preload wallpaper:', wallpaper.url);
+      showToast('Image failed to load, trying another...');
+      setTimeout(() => {
+        getNewWallpaper();
+      }, 500);
       reject(new Error('Failed to load image'));
     };
     img.src = wallpaper.url;
@@ -2619,11 +2815,35 @@ function updateTimerDisplay() {
   const display = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   document.getElementById('timer-display').textContent = display;
   
+  // Update UI visibility
+  updateTimerUI();
+  
   // Timer finished
   if (timerSeconds <= 0 && timerRunning) {
     pauseTimer();
     showToast('Timer finished!');
     // Optional: play a sound or notification
+  }
+}
+
+function updateTimerUI() {
+  const display = document.getElementById('timer-display');
+  const toggleBtn = document.getElementById('timer-toggle');
+  const resetBtn = document.getElementById('timer-reset');
+  const setBtn = document.getElementById('timer-set');
+  
+  if (timerSeconds === 0 && !timerRunning) {
+    // No timer set - hide everything except set button
+    display?.classList.add('hidden');
+    toggleBtn?.classList.add('hidden');
+    resetBtn?.classList.add('hidden');
+    setBtn?.classList.remove('hidden');
+  } else {
+    // Timer is set - show all controls
+    display?.classList.remove('hidden');
+    toggleBtn?.classList.remove('hidden');
+    resetBtn?.classList.remove('hidden');
+    setBtn?.classList.remove('hidden');
   }
 }
 
@@ -2687,6 +2907,7 @@ function setTimer() {
   pauseTimer();
   timerSeconds = minutes * 60 + seconds;
   updateTimerDisplay();
+  updateTimerUI();
 }
 
 async function initTimer() {
@@ -2722,4 +2943,5 @@ async function initTimer() {
   }
   
   updateTimerDisplay();
+  updateTimerUI();
 }

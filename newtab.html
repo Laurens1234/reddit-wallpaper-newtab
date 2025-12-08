@@ -164,6 +164,16 @@
           <span>Only show favorites in slideshow</span>
         </label>
       </div>
+      <div class="form-group form-checkbox">
+        <label>
+          <input type="checkbox" id="settings-local-wallpapers">
+          <span>Use local wallpapers only</span>
+        </label>
+        <small class="form-hint">Upload your own images instead of Reddit wallpapers</small>
+      </div>
+      <div class="form-group">
+        <button type="button" id="manage-local-btn" class="btn btn-secondary">Manage Local Wallpapers</button>
+      </div>
       
       <h4 class="settings-section">Clock & Date Format</h4>
       <div class="form-group">
@@ -354,6 +364,22 @@
         <button id="search-submit" class="btn btn-primary">Search</button>
       </div>
       <div id="search-results" class="search-results-grid"></div>
+    </div>
+  </div>
+
+  <!-- Local Wallpapers Modal -->
+  <div id="local-wallpapers-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Local Wallpapers</h3>
+      <p class="form-hint">Upload your own images to use as wallpapers. Supported formats: JPG, PNG, GIF, WebP</p>
+      <div class="form-group">
+        <input type="file" id="local-wallpaper-input" accept="image/*" multiple style="display: none;">
+        <button id="upload-local-btn" class="btn btn-primary">Upload Images</button>
+      </div>
+      <div id="local-wallpapers-grid" class="local-wallpapers-grid"></div>
+      <div class="modal-buttons">
+        <button id="local-wallpapers-close" class="btn btn-secondary">Close</button>
+      </div>
     </div>
   </div>
 
