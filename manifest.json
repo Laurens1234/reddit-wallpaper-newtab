@@ -8,6 +8,12 @@
     "topSites",
     "search"
   ],
+  "host_permissions": [
+    "https://www.reddit.com/*",
+    "https://api.open-meteo.com/*",
+    "https://geocoding-api.open-meteo.com/*",
+    "https://nominatim.openstreetmap.org/*"
+  ],
   "chrome_url_overrides": {
     "newtab": "newtab.html"
   },

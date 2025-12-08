@@ -1056,13 +1056,28 @@ async function loadWallpaper() {
     const result = await chrome.storage.local.get([cacheKey]);
     const cached = result[cacheKey];
     
+    console.log('Cache key:', cacheKey);
+    console.log('Cached data:', cached);
+    console.log('Has wallpapers array?', cached?.wallpapers);
+    console.log('Wallpapers length:', cached?.wallpapers?.length);
+    
     // If we have cached wallpapers, pick a random one immediately
     if (cached && cached.wallpapers && cached.wallpapers.length > 0) {
       let wallpapers = cached.wallpapers;
       
+      console.log(`Loaded ${wallpapers.length} wallpapers from cache`);
+      
       // Apply color filter if set
       if (settings.colorFilter && settings.colorFilter !== 'none') {
+        console.log(`Applying color filter: ${settings.colorFilter}`);
         wallpapers = await filterByColor(wallpapers, settings.colorFilter);
+        console.log(`After color filter: ${wallpapers.length} wallpapers`);
+      }
+      
+      if (wallpapers.length === 0) {
+        console.warn('No wallpapers left after color filtering, fetching new ones');
+        await getNewWallpaper();
+        return;
       }
       
       const randomIndex = Math.floor(Math.random() * wallpapers.length);
@@ -1079,6 +1094,7 @@ async function loadWallpaper() {
       }
     } else {
       // No cache, need to fetch
+      console.log('No cached wallpapers found, fetching new ones');
       await getNewWallpaper();
     }
   } catch (error) {
@@ -1163,25 +1179,40 @@ function getResolution(post) {
 
 // Fetch wallpapers from Reddit
 async function fetchWallpapers() {
+  console.log('fetchWallpapers called');
   try {
     const settings = await getWallpaperSettings();
+    console.log('fetchWallpapers settings:', settings);
     
     // Use scheduled subreddit if enabled
     const subredditSource = getScheduledSubreddit(settings);
+    console.log('Subreddit source:', subredditSource);
     const subreddits = parseSubreddits(subredditSource);
+    console.log('Parsed subreddits:', subreddits);
     
     if (subreddits.length === 0) {
+      console.warn('No subreddits to fetch from!');
       return [];
     }
     
     // Check cache first (include settings in cache key)
     const cacheKey = `${CACHE_KEY}_${settings.subreddit}_${settings.sort}_${settings.time}_${settings.minResolution}_${settings.allowNsfw}`;
     const result = await chrome.storage.local.get([cacheKey]);
+    console.log('fetchWallpapers cache check - key:', cacheKey);
+    console.log('fetchWallpapers cache check - result:', result[cacheKey]);
     if (result[cacheKey]) {
       const cached = result[cacheKey];
-      if (Date.now() - cached.timestamp < CACHE_DURATION) {
+      const age = Date.now() - cached.timestamp;
+      console.log(`Cache age: ${Math.round(age / 1000)}s (max: ${CACHE_DURATION / 1000}s)`);
+      // Only use cache if it has wallpapers AND is not expired
+      if (cached.wallpapers && cached.wallpapers.length > 0 && Date.now() - cached.timestamp < CACHE_DURATION) {
+        console.log('Returning cached wallpapers:', cached.wallpapers.length);
         return cached.wallpapers;
+      } else {
+        console.log('Cache expired or empty, fetching fresh wallpapers');
       }
+    } else {
+      console.log('No cache found, fetching fresh wallpapers');
     }
     
     // Fetch from all subreddits
@@ -1190,6 +1221,7 @@ async function fetchWallpapers() {
     for (const subreddit of subreddits) {
       try {
         const redditUrl = buildRedditUrl(subreddit, settings);
+        console.log('Fetching from:', redditUrl);
         const response = await fetch(redditUrl, {
           headers: {
             'Accept': 'application/json'
@@ -1197,11 +1229,12 @@ async function fetchWallpapers() {
         });
         
         if (!response.ok) {
-          console.warn(`Failed to fetch from r/${subreddit}`);
+          console.warn(`Failed to fetch from r/${subreddit}, status: ${response.status}`);
           continue;
         }
         
         const data = await response.json();
+        console.log(`Fetched ${data.data.children.length} posts from r/${subreddit}`);
         const posts = data.data.children;
         
         // Filter for valid image posts
@@ -1289,16 +1322,21 @@ async function fetchWallpapers() {
           }))
           .filter(w => w.url); // Filter out any that couldn't get a URL;
         
+        console.log(`Found ${wallpapers.length} valid wallpapers from r/${subreddit}`);
         allWallpapers.push(...wallpapers);
       } catch (err) {
         console.warn(`Error fetching r/${subreddit}:`, err);
       }
     }
     
+    console.log(`Total wallpapers before deduplication: ${allWallpapers.length}`);
+    
     // Filter out blacklisted wallpapers
     const blacklistResult = await chrome.storage.local.get([BLACKLIST_KEY]);
     const blacklist = blacklistResult[BLACKLIST_KEY] || [];
     const filteredWallpapers = allWallpapers.filter(w => !blacklist.includes(w.url));
+    
+    console.log(`After blacklist filter: ${filteredWallpapers.length} wallpapers (removed ${allWallpapers.length - filteredWallpapers.length})`);
     
     // Remove duplicates by URL
     const uniqueWallpapers = [];
@@ -1313,13 +1351,20 @@ async function fetchWallpapers() {
     // Shuffle the wallpapers so we get variety from all subreddits
     const shuffled = uniqueWallpapers.sort(() => Math.random() - 0.5);
     
-    // Cache the results
-    await chrome.storage.local.set({
-      [cacheKey]: {
-        wallpapers: shuffled,
-        timestamp: Date.now()
-      }
-    });
+    console.log(`Final wallpapers to cache: ${shuffled.length}`);
+    
+    // Only cache if we have wallpapers
+    if (shuffled.length > 0) {
+      await chrome.storage.local.set({
+        [cacheKey]: {
+          wallpapers: shuffled,
+          timestamp: Date.now()
+        }
+      });
+      console.log('Cached successfully');
+    } else {
+      console.warn('Not caching empty result');
+    }
     
     return shuffled;
   } catch (error) {
@@ -1454,12 +1499,16 @@ async function getNewWallpaper(retryCount = 0) {
   const MAX_RETRIES = 5;
   const loading = document.getElementById('loading');
   
+  console.log('getNewWallpaper called, retryCount:', retryCount);
+  
   try {
     const settings = await getWallpaperSettings();
+    console.log('Settings:', settings);
     let wallpapers;
     
     // If favorites only mode is enabled, use favorites
     if (settings.favoritesOnly) {
+      console.log('Favorites only mode enabled');
       const favResult = await chrome.storage.local.get([FAVORITES_KEY]);
       wallpapers = favResult[FAVORITES_KEY] || [];
       
@@ -1467,17 +1516,24 @@ async function getNewWallpaper(retryCount = 0) {
         showToast('No favorites saved. Add some wallpapers to favorites first!');
         loading.classList.add('hidden');
         // Fall back to regular wallpapers
+        console.log('No favorites, falling back to regular wallpapers');
         wallpapers = await fetchWallpapers();
       }
     } else {
+      console.log('Fetching wallpapers from Reddit');
       wallpapers = await fetchWallpapers();
     }
+    
+    console.log('Wallpapers fetched:', wallpapers.length);
     
     if (wallpapers.length === 0) {
       showToast('No wallpapers found. Try a different subreddit or settings.');
       loading.classList.add('hidden');
+      console.error('No wallpapers found after filtering');
       return;
     }
+    
+    console.log(`Found ${wallpapers.length} valid wallpapers`);
     
     // Apply color filter if set
     if (settings.colorFilter && settings.colorFilter !== 'none') {
