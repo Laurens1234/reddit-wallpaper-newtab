@@ -14,6 +14,8 @@ const DEFAULT_SETTINGS = {
   // Local wallpapers
   useLocalWallpapers: false,
   localWallpapers: [],
+  // NASA APOD
+  useNasaApod: false,
   // Clock settings
   clockFormat: '24h',
   dateFormat: 'long',
@@ -50,6 +52,7 @@ const FAVORITES_KEY = 'favorite_wallpapers';
 const BLACKLIST_KEY = 'blacklisted_wallpapers';
 const WALLPAPER_HISTORY_KEY = 'wallpaper_history';
 const LOCAL_WALLPAPERS_KEY = 'local_wallpapers';
+const NASA_APOD_CACHE_KEY = 'nasa_apod_cache';
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 const MAX_RECENT_SUBREDDITS = 5;
 const MAX_HISTORY = 50;
@@ -892,6 +895,9 @@ async function openSettingsModal() {
   // Load local wallpapers setting
   document.getElementById('settings-local-wallpapers').checked = settings.useLocalWallpapers || false;
   
+  // Load NASA APOD setting
+  document.getElementById('settings-nasa-apod').checked = settings.useNasaApod || false;
+  
   // Load scheduled subreddits
   document.getElementById('settings-scheduled-enabled').checked = settings.scheduledEnabled || false;
   renderScheduledSubreddits(settings.scheduledSubreddits || []);
@@ -1069,6 +1075,129 @@ async function getRandomLocalWallpaper() {
   return localWallpapers[randomIndex];
 }
 
+// NASA APOD functions
+async function fetchNasaApod(count = 30) {
+  try {
+    // Check cache first
+    const result = await chrome.storage.local.get([NASA_APOD_CACHE_KEY]);
+    const cached = result[NASA_APOD_CACHE_KEY];
+    
+    if (cached && cached.timestamp && (Date.now() - cached.timestamp < CACHE_DURATION)) {
+      if (cached.images && cached.images.length > 0) {
+        return cached.images;
+      }
+    }
+    
+    // Fetch more images to compensate for filtering
+    const apiKey = 'DEMO_KEY'; // You can get a free API key at https://api.nasa.gov
+    const url = `https://api.nasa.gov/planetary/apod?api_key=${apiKey}&count=${count}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`NASA API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Filter for images only (exclude videos) and prefer hdurl
+    const imagePromises = data
+      .filter(item => item.media_type === 'image' && item.hdurl)
+      .map(async item => {
+        const imageUrl = item.hdurl || item.url;
+        
+        // Check image dimensions
+        try {
+          const dimensions = await getImageDimensions(imageUrl);
+          const minDimension = Math.min(dimensions.width, dimensions.height);
+          
+          // Only accept 4K images (minimum 2160px on the smaller side)
+          if (minDimension >= 2160) {
+            return {
+              url: imageUrl,
+              title: item.title,
+              explanation: item.explanation,
+              date: item.date,
+              source: 'NASA APOD',
+              width: dimensions.width,
+              height: dimensions.height
+            };
+          }
+        } catch (err) {
+          console.log('Failed to check dimensions for:', item.title, err);
+        }
+        
+        return null;
+      });
+    
+    const resolvedImages = await Promise.all(imagePromises);
+    const images = resolvedImages.filter(img => img !== null);
+    
+    // Cache the results
+    if (images.length > 0) {
+      await chrome.storage.local.set({
+        [NASA_APOD_CACHE_KEY]: {
+          images: images,
+          timestamp: Date.now()
+        }
+      });
+    }
+    
+    return images;
+  } catch (error) {
+    console.error('Failed to fetch NASA APOD:', error);
+    showToast('Failed to load NASA images');
+    return [];
+  }
+}
+
+// Helper function to get image dimensions
+function getImageDimensions(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+async function getRandomNasaImage() {
+  const images = await fetchNasaApod(30);
+  
+  if (images.length === 0) {
+    return null;
+  }
+  
+  const randomIndex = Math.floor(Math.random() * images.length);
+  return images[randomIndex];
+}
+
+function setNasaWallpaper(nasaImage) {
+  const wallpaperEl = document.getElementById('background');
+  if (!wallpaperEl) return;
+  
+  wallpaperEl.src = nasaImage.url;
+  
+  // Update info bar
+  const infoTitle = document.getElementById('info-title');
+  const infoSubreddit = document.getElementById('info-subreddit');
+  
+  if (infoTitle) infoTitle.textContent = nasaImage.title;
+  if (infoSubreddit) infoSubreddit.textContent = nasaImage.source;
+  
+  // Hide favorite button but show download for NASA images
+  const favoriteBtn = document.getElementById('favorite-btn');
+  const downloadBtn = document.getElementById('download-btn');
+  const viewOriginalBtn = document.getElementById('view-original-btn');
+  
+  favoriteBtn?.classList.add('hidden');
+  downloadBtn?.classList.remove('hidden');
+  viewOriginalBtn?.classList.add('hidden');
+  
+  showToast('NASA image loaded');
+}
+
 // Apply hover-only visibility settings
 function applyHoverSettings(hoverOnly, zenMode = false) {
   const clockDateEl = document.getElementById('clock-date');
@@ -1178,6 +1307,9 @@ async function saveSettings() {
   // Local wallpapers setting
   const useLocalWallpapers = document.getElementById('settings-local-wallpapers').checked;
   
+  // NASA APOD setting
+  const useNasaApod = document.getElementById('settings-nasa-apod').checked;
+  
   // Scheduled subreddits
   const scheduledEnabled = document.getElementById('settings-scheduled-enabled').checked;
   const scheduledSubreddits = getScheduledSubredditsFromUI();
@@ -1193,6 +1325,7 @@ async function saveSettings() {
     showTimer, timerPosition,
     favoritesOnly,
     useLocalWallpapers,
+    useNasaApod,
     scheduledEnabled, scheduledSubreddits,
     zenMode
   };
@@ -1243,6 +1376,19 @@ async function loadWallpaper() {
   
   try {
     const settings = await getWallpaperSettings();
+    
+    // Check if using NASA APOD mode
+    if (settings.useNasaApod) {
+      const nasaImage = await getRandomNasaImage();
+      if (nasaImage) {
+        setNasaWallpaper(nasaImage);
+        loading.classList.add('hidden');
+        return;
+      } else {
+        showToast('No NASA images available. Falling back to Reddit wallpapers');
+        // Fall back to Reddit wallpapers
+      }
+    }
     
     // Check if using local wallpapers mode
     if (settings.useLocalWallpapers) {
@@ -1427,14 +1573,84 @@ async function fetchWallpapers() {
         
         if (!response.ok) {
           console.warn(`Failed to fetch from r/${subreddit}, status: ${response.status}`);
+          
+          // If Reddit API is having issues (500 error), wait and retry
+          if (response.status >= 500) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            // Try one more time
+            try {
+              const retryResponse = await fetch(url, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'application/json'
+                }
+              });
+              
+              if (retryResponse.ok) {
+                const retryData = await retryResponse.json();
+                const posts = retryData.data.children;
+                
+                // Continue with processing posts
+                const wallpapers = await processRedditPosts(posts, settings);
+                allWallpapers.push(...wallpapers);
+              }
+            } catch (retryErr) {
+              console.error('Retry failed:', retryErr);
+            }
+          }
+          
           continue;
         }
         
         const data = await response.json();
         const posts = data.data.children;
         
-        // Filter for valid image posts
-        const wallpapers = posts
+        // Process posts into wallpapers
+        const wallpapers = await processRedditPosts(posts, settings);
+        allWallpapers.push(...wallpapers);
+      } catch (err) {
+        console.warn(`Error fetching r/${subreddit}:`, err);
+      }
+    }
+    
+    const blacklistResult = await chrome.storage.local.get([BLACKLIST_KEY]);
+    const blacklist = blacklistResult[BLACKLIST_KEY] || [];
+    const filteredWallpapers = allWallpapers.filter(w => !blacklist.includes(w.url));
+    
+    // Remove duplicates by URL
+    const uniqueWallpapers = [];
+    const seenUrls = new Set();
+    for (const w of filteredWallpapers) {
+      if (w.url && !seenUrls.has(w.url)) {
+        seenUrls.add(w.url);
+        uniqueWallpapers.push(w);
+      }
+    }
+    
+    // Shuffle the wallpapers so we get variety from all subreddits
+    const shuffled = uniqueWallpapers.sort(() => Math.random() - 0.5);
+    
+    // Only cache if we have wallpapers
+    if (shuffled.length > 0) {
+      await chrome.storage.local.set({
+        [cacheKey]: {
+          wallpapers: shuffled,
+          timestamp: Date.now()
+        }
+      });
+    }
+    
+    return shuffled;
+  } catch (error) {
+    console.error('Error fetching wallpapers:', error);
+    return [];
+  }
+}
+
+// Helper function to process Reddit posts into wallpapers
+async function processRedditPosts(posts, settings) {
+  // Filter for valid image posts
+  return posts
           .map(post => post.data)
           .filter(post => {
             // Skip text posts (self posts)
@@ -1513,48 +1729,10 @@ async function fetchWallpapers() {
             title: cleanTitle(post.title),
             permalink: `https://www.reddit.com${post.permalink}`,
             author: post.author,
-            subreddit: subreddit,
+            subreddit: settings.subreddit || 'unknown',
             resolution: getResolution(post)
           }))
-          .filter(w => w.url); // Filter out any that couldn't get a URL;
-        
-        allWallpapers.push(...wallpapers);
-      } catch (err) {
-        console.warn(`Error fetching r/${subreddit}:`, err);
-      }
-    }
-    const blacklistResult = await chrome.storage.local.get([BLACKLIST_KEY]);
-    const blacklist = blacklistResult[BLACKLIST_KEY] || [];
-    const filteredWallpapers = allWallpapers.filter(w => !blacklist.includes(w.url));
-    
-    // Remove duplicates by URL
-    const uniqueWallpapers = [];
-    const seenUrls = new Set();
-    for (const w of filteredWallpapers) {
-      if (w.url && !seenUrls.has(w.url)) {
-        seenUrls.add(w.url);
-        uniqueWallpapers.push(w);
-      }
-    }
-    
-    // Shuffle the wallpapers so we get variety from all subreddits
-    const shuffled = uniqueWallpapers.sort(() => Math.random() - 0.5);
-    
-    // Only cache if we have wallpapers
-    if (shuffled.length > 0) {
-      await chrome.storage.local.set({
-        [cacheKey]: {
-          wallpapers: shuffled,
-          timestamp: Date.now()
-        }
-      });
-    }
-    
-    return shuffled;
-  } catch (error) {
-    console.error('Error fetching wallpapers:', error);
-    return [];
-  }
+          .filter(w => w.url); // Filter out any that couldn't get a URL
 }
 
 // Get direct image URL from post
@@ -1686,6 +1864,20 @@ async function getNewWallpaper(retryCount = 0) {
   try {
     const settings = await getWallpaperSettings();
     let wallpapers;
+    
+    // If using NASA APOD mode, use NASA images
+    if (settings.useNasaApod) {
+      const nasaImage = await getRandomNasaImage();
+      if (nasaImage) {
+        setNasaWallpaper(nasaImage);
+        loading.classList.add('hidden');
+        return;
+      } else {
+        showToast('No NASA images available');
+        loading.classList.add('hidden');
+        return;
+      }
+    }
     
     // If using local wallpapers mode, use local wallpapers
     if (settings.useLocalWallpapers) {
