@@ -307,23 +307,9 @@ function createShortcutElement(site, index) {
   iconDiv.classList.add('fallback');
   iconDiv.textContent = site.title.charAt(0).toUpperCase();
   
-  // Try to load favicon - create image but don't add to DOM until loaded
-  const domain = new URL(site.url).hostname;
-  const img = new Image();
-  
-  img.onload = () => {
-    // Favicon loaded successfully, replace fallback
-    iconDiv.classList.remove('fallback');
-    iconDiv.textContent = '';
-    img.className = 'shortcut-favicon';
-    iconDiv.appendChild(img);
-  };
-  
-  // Silently ignore errors - fallback is already shown
-  img.onerror = () => {};
-  
-  // Set src last to start loading
-  img.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+  // Try to load a favicon (robust): direct /favicon.ico -> external services
+  // We keep the letter fallback until an actual image loads.
+  tryLoadFaviconInto(iconDiv, site.url);
   
   const titleSpan = document.createElement('span');
   titleSpan.className = 'shortcut-title';
@@ -335,6 +321,69 @@ function createShortcutElement(site, index) {
   wrapper.appendChild(a);
   
   return wrapper;
+}
+
+function getFaviconCandidates(pageUrl) {
+  try {
+    const url = new URL(pageUrl);
+    const domain = url.hostname;
+
+    // Extension pages are not allowed to load chrome://* resources.
+    // Also, non-http(s) schemes (chrome:, edge:, about:) won't have a normal favicon.
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return [];
+    }
+
+    const encodedOrigin = encodeURIComponent(url.origin);
+
+    // Prefer a proxy service to avoid:
+    // - 404 spam from sites without /favicon.ico
+    // - CORP blocks (net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin)
+    // Use a single provider to avoid multi-try 404 noise.
+    return [
+      `https://www.google.com/s2/favicons?sz=64&domain_url=${encodedOrigin}`
+    ];
+  } catch {
+    return [];
+  }
+}
+
+function tryLoadFaviconInto(iconDiv, pageUrl) {
+  const candidates = getFaviconCandidates(pageUrl);
+  if (candidates.length === 0) return;
+
+  const img = new Image();
+  img.className = 'shortcut-favicon';
+  img.alt = '';
+  img.decoding = 'async';
+  img.referrerPolicy = 'no-referrer';
+
+  let idx = 0;
+
+  const applyLoadedImage = () => {
+    // Favicon loaded successfully, replace fallback
+    iconDiv.classList.remove('fallback');
+    iconDiv.textContent = '';
+    // Ensure we don't append multiple times (e.g., if called twice)
+    if (img.parentElement !== iconDiv) {
+      iconDiv.innerHTML = '';
+      iconDiv.appendChild(img);
+    }
+  };
+
+  const tryNext = () => {
+    idx += 1;
+    if (idx >= candidates.length) {
+      return; // Keep letter fallback
+    }
+    img.src = candidates[idx];
+  };
+
+  img.onload = applyLoadedImage;
+  img.onerror = tryNext;
+
+  // Start loading
+  img.src = candidates[idx];
 }
 
 // Open edit modal
@@ -1946,6 +1995,7 @@ async function getNewWallpaper(retryCount = 0) {
       document.getElementById('background').src = wallpaper.url;
       currentWallpaperData = wallpaper;
       updateWallpaperInfo(wallpaper);
+      updateFavoriteButton();
     }
     
     loading.classList.add('hidden');
